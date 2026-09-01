@@ -1,0 +1,17 @@
+@baseUrl = http://localhost:8080
+
+### Message accepted by the validation rule
+POST {{baseUrl}}/api/messages
+Content-Type: application/json
+
+{
+  "text": "Order 123 is ready"
+}
+
+### Message rejected by the validation rule
+POST {{baseUrl}}/api/messages
+Content-Type: application/json
+
+{
+  "text": "No digits here"
+}
