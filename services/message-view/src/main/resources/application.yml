@@ -16,3 +16,11 @@ spring:
 
 server:
   port: ${SERVER_PORT:8082}
+
+logging:
+  structured:
+    json:
+      add:
+        service: ${spring.application.name}
+        environment: ${DEPLOYMENT_ENVIRONMENT:local}
+        instanceId: ${INSTANCE_ID:${HOSTNAME:local}}

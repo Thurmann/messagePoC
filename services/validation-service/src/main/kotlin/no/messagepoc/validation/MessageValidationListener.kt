@@ -9,6 +9,8 @@ import no.messagepoc.contracts.MessageValidatedPayload
 import org.slf4j.LoggerFactory
 import org.springframework.kafka.annotation.KafkaListener
 import org.springframework.kafka.core.KafkaTemplate
+import org.springframework.kafka.support.KafkaHeaders
+import org.springframework.messaging.handler.annotation.Header
 import org.springframework.stereotype.Component
 import java.time.Instant
 import java.util.UUID
@@ -22,7 +24,12 @@ class MessageValidationListener(
     private val logger = LoggerFactory.getLogger(javaClass)
 
     @KafkaListener(topics = [KafkaTopics.MESSAGE_SUBMITTED])
-    fun validate(event: MessageSubmittedEvent) {
+    fun validate(
+        event: MessageSubmittedEvent,
+        @Header(KafkaHeaders.RECEIVED_TOPIC) sourceTopic: String,
+        @Header(KafkaHeaders.RECEIVED_PARTITION) sourcePartition: Int,
+        @Header(KafkaHeaders.OFFSET) sourceOffset: Long,
+    ) {
         val result = if (validationRule.accepts(event.payload.text)) {
             MessageValidatedEvent(
                 eventId = UUID.randomUUID(),
@@ -48,16 +55,23 @@ class MessageValidationListener(
             )
         }
 
-        kafkaTemplate
+        val sendResult = kafkaTemplate
             .send(KafkaTopics.MESSAGE_RESULTS, event.messageId.toString(), result)
             .get(5, TimeUnit.SECONDS)
 
-        logger.info(
-            "Validated messageId={} correlationId={} result={}",
-            event.messageId,
-            event.correlationId,
-            result.eventType,
-        )
+        logger.atInfo()
+            .addKeyValue("eventId", result.eventId)
+            .addKeyValue("eventType", result.eventType)
+            .addKeyValue("causationId", result.causationId)
+            .addKeyValue("messageId", result.messageId)
+            .addKeyValue("correlationId", result.correlationId)
+            .addKeyValue("sourceTopic", sourceTopic)
+            .addKeyValue("sourcePartition", sourcePartition)
+            .addKeyValue("sourceOffset", sourceOffset)
+            .addKeyValue("targetTopic", sendResult.recordMetadata.topic())
+            .addKeyValue("targetPartition", sendResult.recordMetadata.partition())
+            .addKeyValue("targetOffset", sendResult.recordMetadata.offset())
+            .log("Message validation completed")
     }
 }
 

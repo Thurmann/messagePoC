@@ -5,7 +5,7 @@ POST {{baseUrl}}/api/messages
 Content-Type: application/json
 
 {
-  "text": "Order 123 is ready"
+  "text": "Test 33"
 }
 
 ### Message rejected by the validation rule
@@ -13,5 +13,5 @@ POST {{baseUrl}}/api/messages
 Content-Type: application/json
 
 {
-  "text": "No digits here"
+  "text": "ingen tall"
 }

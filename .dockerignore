@@ -1,0 +1,8 @@
+.git
+.gradle
+.idea
+**/build
+*.iml
+README.md
+docs
+requests.http

@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotBlank
 import no.messagepoc.contracts.KafkaTopics
 import no.messagepoc.contracts.MessageSubmittedEvent
 import no.messagepoc.contracts.MessageSubmittedPayload
+import org.slf4j.LoggerFactory
 import org.springframework.http.ResponseEntity
 import org.springframework.kafka.core.KafkaTemplate
 import org.springframework.web.bind.annotation.PostMapping
@@ -21,6 +22,8 @@ import java.util.concurrent.TimeUnit
 class MessageController(
     private val kafkaTemplate: KafkaTemplate<String, Any>,
 ) {
+    private val logger = LoggerFactory.getLogger(javaClass)
+
     @PostMapping
     fun submit(
         @Valid @RequestBody request: SubmitMessageRequest,
@@ -37,9 +40,19 @@ class MessageController(
             payload = MessageSubmittedPayload(request.text.trim()),
         )
 
-        kafkaTemplate
+        val sendResult = kafkaTemplate
             .send(KafkaTopics.MESSAGE_SUBMITTED, messageId.toString(), event)
             .get(5, TimeUnit.SECONDS)
+
+        logger.atInfo()
+            .addKeyValue("eventId", event.eventId)
+            .addKeyValue("eventType", event.eventType)
+            .addKeyValue("messageId", event.messageId)
+            .addKeyValue("correlationId", event.correlationId)
+            .addKeyValue("topic", sendResult.recordMetadata.topic())
+            .addKeyValue("partition", sendResult.recordMetadata.partition())
+            .addKeyValue("offset", sendResult.recordMetadata.offset())
+            .log("Message submitted")
 
         return ResponseEntity.accepted().body(
             SubmitMessageResponse(

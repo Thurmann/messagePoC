@@ -1,8 +1,9 @@
 # Message PoC
 
-Local Kotlin/Spring Boot PoC for learning Kafka application development. This
-first milestone contains three independently runnable services, shared event
-contracts, Kafka in KRaft mode, PostgreSQL for the next milestone, and Kafbat UI.
+Local Kotlin/Spring Boot PoC for learning Kafka application development. The
+project contains three services, shared event contracts, Kafka in KRaft mode,
+PostgreSQL for a later milestone, Kafbat UI, and centralized local logging with
+Grafana Alloy, Loki, and Grafana.
 
 ## Prerequisites
 
@@ -12,33 +13,34 @@ contracts, Kafka in KRaft mode, PostgreSQL for the next milestone, and Kafbat UI
 The project uses its own Gradle Wrapper; no global Gradle installation is
 required.
 
-## Start local infrastructure
+## Start the complete local environment
 
 ```bash
-docker compose up -d
+docker compose up --build -d
 docker compose ps
 ```
 
+Stop any services previously started with `bootRun` before using the complete
+Compose environment. Mixing host processes and Compose containers creates extra
+members in the same Kafka consumer groups, and a host `message-api` may continue
+to receive traffic on port 8080. This is useful when deliberately testing
+rebalancing, but confusing as the default development mode.
+
 Kafka is available at `localhost:9092`, PostgreSQL at `localhost:5432`, and
-Kafbat UI at <http://localhost:8085>.
+the API at `localhost:8080`.
 
-## Start the services
+Local tools:
 
-Run each command in a separate terminal:
+| Tool | URL | Purpose |
+| --- | --- | --- |
+| Kafbat UI | <http://localhost:8085> | Inspect Kafka topics, records, and consumer groups |
+| Grafana | <http://localhost:3000> | Search logs from all application instances |
+| Alloy UI | <http://localhost:12345> | Inspect the local log collection pipeline |
+| Loki readiness | <http://localhost:3100/ready> | Check whether the log store is ready |
 
-```bash
-./gradlew :services:message-view:bootRun
-./gradlew :services:validation-service:bootRun
-./gradlew :services:message-api:bootRun
-```
-
-Ports:
-
-| Service | Port |
-| --- | ---: |
-| message-api | 8080 |
-| validation-service | 8081 |
-| message-view | 8082 |
+The Grafana instance is bound to localhost and allows anonymous local access,
+including Explore for log queries. The Loki data source is provisioned
+automatically.
 
 ## Send messages
 
@@ -59,7 +61,95 @@ curl -i -X POST http://localhost:8080/api/messages \
 ```
 
 The API returns `202 Accepted`. The final `VALIDATED` or `REJECTED` result is
-visible in the `message-view` terminal and in Kafbat UI.
+visible in the application logs in Grafana and as an event in Kafbat UI.
+
+## Search centralized logs
+
+Open Grafana, select **Explore**, and use the `Loki` data source. Some useful
+LogQL queries are:
+
+All application logs:
+
+```logql
+{environment="local"}
+```
+
+Structured logs from `message-view`:
+
+```logql
+{environment="local", service="message-view"} | json
+```
+
+Follow one message through all services by copying `correlationId` from the API
+response:
+
+```logql
+{environment="local"} | json | correlationId="PUT-CORRELATION-ID-HERE"
+```
+
+Application log entries include `service`, `instanceId`, `eventId`,
+`messageId`, and `correlationId`. Consumer logs also include Kafka topic,
+partition, and offset. IDs remain JSON fields rather than Loki labels to avoid
+high-cardinality labels.
+
+All application containers can also be followed without Grafana:
+
+```bash
+docker compose logs -f message-api validation-service message-view
+```
+
+Alloy collects application containers started by Compose. Services started
+directly with Gradle are intentionally not collected by this Docker-based
+pipeline.
+
+## Run multiple consumers
+
+To demonstrate Kafka partition assignment across two `message-view` instances:
+
+```bash
+docker compose up -d --scale message-view=2
+```
+
+Use the `instanceId`, `partition`, and `offset` fields in Grafana to see which
+instance processed each result.
+
+After a code change, rebuild only the affected service, for example:
+
+```bash
+docker compose up --build -d message-view
+```
+
+## Reset local test data
+
+Reset Kafka topics, records, and application consumer-group offsets, then
+restart the three Compose services:
+
+```bash
+./scripts/reset-local.sh
+```
+
+The normal project topology uses three partitions. For a simpler test where
+every topic has only one partition:
+
+```bash
+./scripts/reset-local.sh --partitions 1
+```
+
+Also reset the PostgreSQL `public` schema:
+
+```bash
+./scripts/reset-local.sh --database
+```
+
+The script asks for confirmation unless `--yes` is supplied. It refuses to
+delete topics while `bootRun` or IDE-started consumers are still members of the
+Kafka groups; stop those processes and run it again. Use `--no-restart` to leave
+the application services stopped after the reset.
+
+Resetting records does not normally require changing the number of partitions.
+Three partitions are intentional because they let the PoC demonstrate consumer
+scaling and partition assignment. Use one partition only when that behavior is
+not part of the test.
 
 ## Build and test
 
@@ -75,10 +165,13 @@ Keep data:
 docker compose down
 ```
 
-Delete local Kafka and PostgreSQL data:
+Delete all local Kafka, PostgreSQL, Loki, and Grafana data:
 
 ```bash
 docker compose down --volumes
 ```
+
+This also deletes locally retained Loki logs and Grafana state. Loki is
+configured with seven-day retention while its volume exists.
 
 See [the architecture description](docs/architecture.md) for the event flow.
