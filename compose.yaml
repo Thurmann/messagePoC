@@ -108,12 +108,31 @@ services:
         condition: service_completed_successfully
     logging: *application-logging
 
-  message-view:
-    image: message-poc/message-view:local
+  message-persistence:
+    image: message-poc/message-persistence:local
     build:
       context: .
       args:
-        SERVICE: message-view
+        SERVICE: message-persistence
+    init: true
+    environment:
+      <<: *application-environment
+      DB_HOST: postgres
+    depends_on:
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    logging: *application-logging
+
+  message-audit:
+    image: message-poc/message-audit:local
+    build:
+      context: .
+      args:
+        SERVICE: message-audit
     init: true
     environment: *application-environment
     depends_on:

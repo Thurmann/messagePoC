@@ -13,7 +13,8 @@ RUN --mount=type=cache,target=/root/.gradle,sharing=locked \
     ./gradlew \
       :services:message-api:bootJar \
       :services:validation-service:bootJar \
-      :services:message-view:bootJar \
+      :services:message-persistence:bootJar \
+      :services:message-audit:bootJar \
       --no-daemon
 
 FROM eclipse-temurin:21-jre-alpine

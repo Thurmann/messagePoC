@@ -14,7 +14,7 @@ discovery.relabel "message_poc" {
 
   rule {
     source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
-    regex         = "message-api|validation-service|message-view"
+    regex         = "message-api|validation-service|message-persistence|message-audit"
     action        = "keep"
   }
 

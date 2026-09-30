@@ -74,10 +74,10 @@ All application logs:
 {environment="local"}
 ```
 
-Structured logs from `message-view`:
+Structured logs from `message-persistence`:
 
 ```logql
-{environment="local", service="message-view"} | json
+{environment="local", service="message-persistence"} | json
 ```
 
 Follow one message through all services by copying `correlationId` from the API
@@ -95,7 +95,7 @@ high-cardinality labels.
 All application containers can also be followed without Grafana:
 
 ```bash
-docker compose logs -f message-api validation-service message-view
+docker compose logs -f message-api validation-service message-persistence
 ```
 
 Alloy collects application containers started by Compose. Services started
@@ -104,10 +104,10 @@ pipeline.
 
 ## Run multiple consumers
 
-To demonstrate Kafka partition assignment across two `message-view` instances:
+To demonstrate Kafka partition assignment across two `message-persistence` instances:
 
 ```bash
-docker compose up -d --scale message-view=2
+docker compose up -d --scale message-persistence=2
 ```
 
 Use the `instanceId`, `partition`, and `offset` fields in Grafana to see which
@@ -116,7 +116,7 @@ instance processed each result.
 After a code change, rebuild only the affected service, for example:
 
 ```bash
-docker compose up --build -d message-view
+docker compose up --build -d message-persistence
 ```
 
 ## Reset local test data

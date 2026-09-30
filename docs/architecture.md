@@ -17,11 +17,12 @@ POST /api/messages
                                            v
                                  poc.messages.results.v1
                                            |
-                                           v
-                                      message-view
-                                           |
-                                           v
-                                  structured JSON log
+                          +----------------+----------------+
+                          |                                 |
+                  message-persistence                 message-audit
+                          |                                 |
+                          v                                 v
+                 persist messages in DB            structured JSON log 
 ```
 
 `messageId` is used as the Kafka record key so all events for one message are
@@ -34,7 +35,7 @@ a later milestone.
 ```text
 message-api ---------+
 validation-service --+--> Docker JSON logs --> Grafana Alloy --> Loki --> Grafana
-message-view --------+
+message-persistence --------+
 ```
 
 The applications log structured JSON to standard output when they run in

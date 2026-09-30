@@ -13,12 +13,15 @@ PARTITIONS=3
 TOPICS=(
   "poc.messages.submitted.v1"
   "poc.messages.results.v1"
+  "poc.messages.persisted.v1"
   "poc.messages.submitted.v1-dlt"
+  "poc.messages.persisted.v1-dlt"
 )
 
 CONSUMER_GROUPS=(
   "validation-service-v1"
-  "message-view-v1"
+  "message-persistence-v1"
+  "message-audit-v1"
 )
 
 usage() {
@@ -99,7 +102,7 @@ if ! "$ASSUME_YES"; then
 fi
 
 printf '\nStopping Compose application services...\n'
-docker compose stop message-api validation-service message-view
+docker compose stop message-api validation-service message-persistence message-audit
 
 printf 'Starting required infrastructure...\n'
 docker compose up -d --wait kafka postgres
@@ -205,7 +208,7 @@ fi
 
 if "$RESTART_SERVICES"; then
   printf 'Starting Compose application services...\n'
-  docker compose up -d message-api validation-service message-view
+  docker compose up -d message-api validation-service message-persistence message-audit
 else
   printf 'Application services remain stopped (--no-restart).\n'
 fi

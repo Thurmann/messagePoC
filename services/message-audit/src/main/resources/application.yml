@@ -1,0 +1,26 @@
+spring:
+  application:
+    name: message-audit
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: message-audit-v1
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JacksonJsonDeserializer
+      properties:
+        spring.json.trusted.packages: no.thurmann.messagepoc.contracts
+    listener:
+      ack-mode: record
+
+server:
+  port: ${SERVER_PORT:8082}
+
+logging:
+  structured:
+    json:
+      add:
+        service: ${spring.application.name}
+        environment: ${DEPLOYMENT_ENVIRONMENT:local}
+        instanceId: ${INSTANCE_ID:${HOSTNAME:local}}

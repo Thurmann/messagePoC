@@ -11,5 +11,6 @@ include(
     "contracts",
     "services:message-api",
     "services:validation-service",
-    "services:message-view",
+    "services:message-persistence",
+    "services:message-audit",
 )

@@ -1,9 +1,37 @@
 .gradle/
 .kotlin/
+.gradle-user-home/
 build/
 **/build/
 .idea/
 *.iml
+*.ipr
+*.iws
 .DS_Store
 out/
+
+# Logs / crash dumps
+*.log
+hs_err_pid*
+replay_pid*
+*.hprof
+*.jfr
+
+# Env files (keep templates/examples trackable)
 .env
+.env.*
+!.env.example
+!.env.template
+
+# Editor tooling
+.vscode/
+.classpath
+.project
+.settings/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*

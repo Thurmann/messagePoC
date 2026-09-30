@@ -10,7 +10,7 @@ spring:
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.springframework.kafka.support.serializer.JacksonJsonDeserializer
       properties:
-        spring.json.trusted.packages: no.messagepoc.contracts
+        spring.json.trusted.packages: no.thurmann.messagepoc.contracts
     producer:
       acks: all
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
