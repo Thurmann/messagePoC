@@ -115,9 +115,12 @@ services:
       args:
         SERVICE: message-persistence
     init: true
+    ports:
+      - "8083:8083"
     environment:
       <<: *application-environment
       DB_HOST: postgres
+      LOKI_URL: http://loki:3100
     depends_on:
       kafka:
         condition: service_healthy

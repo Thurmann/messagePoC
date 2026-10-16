@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f5f2">
+  <title>Message inbox · Kafka PoC</title>
+  <style>
+    :root { color-scheme: light; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #17221d; background: #f4f5f2; font-synthesis: none; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; }
+    main { width: min(1440px, calc(100% - 40px)); margin: 0 auto; padding: 64px 0 80px; }
+    .eyebrow { margin: 0 0 12px; color: #547160; font-size: 12px; font-weight: 750; letter-spacing: .14em; text-transform: uppercase; }
+    h1 { margin: 0; font-size: clamp(36px, 7vw, 58px); line-height: 1.04; letter-spacing: -.055em; }
+    .intro { max-width: 520px; margin: 18px 0 34px; color: #627068; font-size: 16px; line-height: 1.6; }
+    .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+    .count { color: #627068; font-size: 13px; }
+    button { border: 1px solid #d6ddd7; border-radius: 999px; background: #fff; color: #17221d; padding: 9px 15px; font: inherit; font-size: 13px; font-weight: 650; cursor: pointer; }
+    button:hover { border-color: #8da697; }
+    .panels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; align-items: start; }
+    .panel { min-width: 0; }
+    .panel-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin: 0 0 12px; }
+    h2 { margin: 0; font-size: 18px; letter-spacing: -.025em; }
+    .panel-count { color: #77837b; font-size: 12px; }
+    #messages, #audit-logs { display: grid; gap: 10px; }
+    .message, .audit-log { display: grid; grid-template-columns: 1fr auto; gap: 12px; padding: 18px; border: 1px solid #e2e6e1; border-radius: 14px; background: #fff; box-shadow: 0 3px 12px #243d2b08; }
+    .message p, .audit-log p { grid-column: 1 / -1; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; line-height: 1.55; }
+    .audit-log .log-title { grid-column: 1 / -1; margin: 0; font-size: 13px; font-weight: 700; }
+    .log-meta { grid-column: 1 / -1; color: #77837b; font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+    time { color: #77837b; font-size: 12px; }
+    .status { align-self: start; border-radius: 999px; padding: 5px 9px; font-size: 10px; font-weight: 800; letter-spacing: .08em; }
+    .VALIDATED { background: #e6f3e9; color: #28643b; }
+    .REJECTED { background: #fbebdf; color: #984d20; }
+    .DLT { background: #f1e1ef; color: #78366f; }
+    .reason { grid-column: 1 / -1; margin-top: -7px; color: #984d20; font-size: 13px; }
+    .empty, .error { padding: 28px 20px; border: 1px dashed #cbd4cc; border-radius: 14px; color: #68756d; text-align: center; line-height: 1.6; }
+    .error { border-color: #d4a28b; color: #984d20; }
+    @media (max-width: 760px) { .panels { grid-template-columns: 1fr; } }
+    @media (max-width: 520px) { main { width: min(100% - 28px, 520px); padding-top: 40px; } .message, .audit-log { padding: 16px; } }
+  </style>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">Message PoC · Processing trail</p>
+    <h1>Message inbox</h1>
+    <p class="intro">Compare persisted results with the corresponding <code>message-audit</code> log entries. Both panels refresh automatically.</p>
+    <div class="toolbar">
+      <span class="count" id="updated" aria-live="polite">Loading…</span>
+      <button id="refresh" type="button">Refresh both</button>
+    </div>
+    <div class="panels">
+      <section class="panel" aria-labelledby="database-title">
+        <div class="panel-heading"><h2 id="database-title">Database results</h2><span class="panel-count" id="message-count"></span></div>
+        <div id="messages" aria-live="polite"></div>
+      </section>
+      <section class="panel" aria-labelledby="audit-title">
+        <div class="panel-heading"><h2 id="audit-title">message-audit log</h2><span class="panel-count" id="audit-count"></span></div>
+        <div id="audit-logs" aria-live="polite"></div>
+      </section>
+    </div>
+  </main>
+  <script>
+    const messages = document.querySelector('#messages');
+    const auditLogs = document.querySelector('#audit-logs');
+    const messageCount = document.querySelector('#message-count');
+    const auditCount = document.querySelector('#audit-count');
+    const updated = document.querySelector('#updated');
+
+    function renderMessages(items) {
+      messageCount.textContent = `${items.length} ${items.length === 1 ? 'result' : 'results'}`;
+      if (items.length === 0) {
+        messages.innerHTML = '<div class="empty">No messages yet. Send one with <code>./sendmessage.sh "some text"</code>.</div>';
+        return;
+      }
+
+      messages.replaceChildren(...items.map((item) => {
+        const article = document.createElement('article');
+        article.className = 'message';
+        const time = document.createElement('time');
+        time.dateTime = item.occurredAt;
+        time.textContent = new Date(item.occurredAt).toLocaleString();
+        const status = document.createElement('span');
+        status.className = `status ${item.status}`;
+        status.textContent = item.status;
+        const text = document.createElement('p');
+        text.textContent = item.text;
+        article.append(time, status, text);
+        if (item.reason) {
+          const reason = document.createElement('div');
+          reason.className = 'reason';
+          reason.textContent = item.reason;
+          article.append(reason);
+        }
+        return article;
+      }));
+    }
+
+    function renderAuditLogs(items) {
+      auditCount.textContent = `${items.length} ${items.length === 1 ? 'log entry' : 'log entries'}`;
+      if (items.length === 0) {
+        auditLogs.innerHTML = '<div class="empty">No message-audit entries found in the last 24 hours.</div>';
+        return;
+      }
+
+      auditLogs.replaceChildren(...items.map((item) => {
+        const article = document.createElement('article');
+        article.className = 'audit-log';
+        const time = document.createElement('time');
+        time.dateTime = item.timestamp;
+        time.textContent = new Date(item.timestamp).toLocaleString();
+        const status = document.createElement('span');
+        status.className = `status ${item.result || ''}`;
+        status.textContent = item.result || 'AUDIT';
+        const title = document.createElement('h3');
+        title.className = 'log-title';
+        title.textContent = item.message;
+        article.append(time, status, title);
+        if (item.text) {
+          const text = document.createElement('p');
+          text.textContent = item.text;
+          article.append(text);
+        }
+        const meta = document.createElement('div');
+        meta.className = 'log-meta';
+        meta.textContent = [item.messageId && `message ${item.messageId}`, item.correlationId && `correlation ${item.correlationId}`].filter(Boolean).join(' · ');
+        if (meta.textContent) article.append(meta);
+        return article;
+      }));
+    }
+
+    async function loadPanel(url, render, errorElement, label) {
+      try {
+        const response = await fetch(url, { headers: { Accept: 'application/json' } });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        render(await response.json());
+        return true;
+      } catch (error) {
+        errorElement.innerHTML = `<div class="error">Could not load ${label}. Retrying automatically…</div>`;
+        console.error(`Could not load ${label}:`, error);
+        return false;
+      }
+    }
+
+    async function refresh() {
+      updated.textContent = 'Refreshing…';
+      const [databaseOk, auditOk] = await Promise.all([
+        loadPanel('/api/messages', renderMessages, messages, 'database results'),
+        loadPanel('/api/audit-logs', renderAuditLogs, auditLogs, 'message-audit logs'),
+      ]);
+      updated.textContent = databaseOk && auditOk ? `Updated ${new Date().toLocaleTimeString()}` : 'Some data could not be loaded';
+    }
+
+    document.querySelector('#refresh').addEventListener('click', refresh);
+    refresh();
+    window.setInterval(refresh, 5000);
+  </script>
+</body>
+</html>

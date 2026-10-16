@@ -14,7 +14,7 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 @Component
-@KafkaListener(topics = [KafkaTopics.MESSAGE_RESULTS])
+@KafkaListener(topics = [KafkaTopics.MESSAGE_RESULTS, KafkaTopics.MESSAGE_SUBMITTED_DLT])
 class MessageAuditResultListener {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -39,13 +39,24 @@ class MessageAuditResultListener {
     }
 
     @KafkaHandler(isDefault = true)
-    fun handleUnknown(event: Any) {
+    fun handleUnknown(
+        event: Any,
+        @Header(KafkaHeaders.RECEIVED_TOPIC) topic: String,
+    ) {
+        if (topic == KafkaTopics.MESSAGE_SUBMITTED_DLT) {
+            val eventType = event::class.qualifiedName ?: event::class.simpleName ?: "unknown"
+            logger.atInfo()
+                .addKeyValue("result", "DLT")
+                .addKeyValue("topic", topic)
+                .addKeyValue("eventType", eventType)
+                .addKeyValue("data", event)
+                .log("Received DLT event on type={}", eventType)
+            return
+        }
+
         logger.atError()
             .addKeyValue("data", event)
-            .log(
-                "Received unsupported message result type={}",
-                event::class.qualifiedName
-            )
+            .log("Received unsupported message result type={}", event::class.qualifiedName)
     }
 
     private fun logResult(

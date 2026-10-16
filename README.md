@@ -27,13 +27,15 @@ to receive traffic on port 8080. This is useful when deliberately testing
 rebalancing, but confusing as the default development mode.
 
 Kafka is available at `localhost:9092`, PostgreSQL at `localhost:5432`, and
-the API at `localhost:8080`.
+the API at `localhost:8080`. The message inbox is served by
+`message-persistence` at <http://localhost:8083>.
 
 Local tools:
 
 | Tool | URL | Purpose |
 | --- | --- | --- |
 | Kafbat UI | <http://localhost:8085> | Inspect Kafka topics, records, and consumer groups |
+| Message inbox | <http://localhost:8083> | Compare database results with recent `message-audit` logs |
 | Grafana | <http://localhost:3000> | Search logs from all application instances |
 | Alloy UI | <http://localhost:12345> | Inspect the local log collection pipeline |
 | Loki readiness | <http://localhost:3100/ready> | Check whether the log store is ready |
@@ -43,6 +45,21 @@ including Explore for log queries. The Loki data source is provisioned
 automatically.
 
 ## Send messages
+
+Send a message using the helper script:
+
+```bash
+./sendmessage.sh "some text to be shown in the frontend"
+```
+
+It posts to `http://localhost:8080/api/messages`. Set `MESSAGE_API_URL` to use a
+different API address. The inbox refreshes every three seconds; messages appear
+after the Kafka validation and persistence steps finish.
+
+The database-backed JSON endpoint is also available at
+`http://localhost:8083/api/messages`.
+The adjacent audit panel reads the 50 newest result entries from `message-audit`
+through Loki at `http://localhost:8083/api/audit-logs`.
 
 Accepted by the validation rule:
 
@@ -62,6 +79,20 @@ curl -i -X POST http://localhost:8080/api/messages \
 
 The API returns `202 Accepted`. The final `VALIDATED` or `REJECTED` result is
 visible in the application logs in Grafana and as an event in Kafbat UI.
+
+## Force a dead-letter event
+
+The validation service retries a failed record twice, then publishes it to
+`poc.messages.submitted.v1-dlt`. To trigger this path:
+
+```bash
+./sendmessage.sh "__FORCE_DLT__"
+```
+
+This reserved text deliberately makes the validation listener throw an
+exception. Inspect the DLT in Kafbat UI at <http://localhost:8085>. The message
+is sent through the API successfully, but it is not written to the normal
+results topic or the message inbox.
 
 ## Search centralized logs
 

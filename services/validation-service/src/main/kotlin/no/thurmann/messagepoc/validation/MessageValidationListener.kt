@@ -30,6 +30,10 @@ class MessageValidationListener(
         @Header(KafkaHeaders.RECEIVED_PARTITION) sourcePartition: Int,
         @Header(KafkaHeaders.OFFSET) sourceOffset: Long,
     ) {
+        if (event.payload.text == DLT_TEST_MESSAGE) {
+            throw IllegalStateException("Forced failure for dead-letter queue demonstration")
+        }
+
         val result = if (validationRule.accepts(event.payload.text)) {
             MessageValidatedEvent(
                 eventId = UUID.randomUUID(),
@@ -74,6 +78,8 @@ class MessageValidationListener(
             .log("Message validation completed")
     }
 }
+
+private const val DLT_TEST_MESSAGE = "__FORCE_DLT__"
 
 @Component
 class ValidationRule {
