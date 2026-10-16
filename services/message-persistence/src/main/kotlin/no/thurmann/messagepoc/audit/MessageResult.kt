@@ -53,6 +53,9 @@ open class MessageResult(
 
     @field:Column(name = "reason", nullable = true)
     open var reason: String? = null,
+
+    @field:Column(name = "profanity_score", nullable = true)
+    open var profanityScore: Double? = null,
 ) {
     companion object {
         fun from(event: MessageValidatedEvent): MessageResult =
@@ -68,6 +71,7 @@ open class MessageResult(
                 status = MessageResultStatus.VALIDATED,
                 text = event.payload.text,
                 reason = null,
+                profanityScore = event.profanityScore,
             )
 
         fun from(event: MessageRejectedEvent): MessageResult =
@@ -83,6 +87,7 @@ open class MessageResult(
                 status = MessageResultStatus.REJECTED,
                 text = event.payload.text,
                 reason = event.payload.reason,
+                profanityScore = event.profanityScore,
             )
     }
 }

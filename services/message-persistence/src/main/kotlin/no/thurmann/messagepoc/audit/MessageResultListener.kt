@@ -55,6 +55,7 @@ class MessageResultListener(
             .addKeyValue("correlationId", result.correlationId)
             .addKeyValue("result", result.status.name)
             .addKeyValue("reason", result.reason)
+            .addKeyValue("profanityScore", result.profanityScore)
             .addKeyValue("text", result.text)
             .addKeyValue("topic", topic)
             .addKeyValue("partition", partition)

@@ -7,28 +7,37 @@ POST /api/messages
   message-api -- MessageSubmitted --> poc.messages.submitted.v1
                                            |
                                            v
-                                  validation-service
+                 validation-service
                                            |
-                          +----------------+----------------+
-                          |                                 |
-                  MessageValidated                 MessageRejected
-                          +----------------+----------------+
-                                           |
-                                           v
-                                 poc.messages.results.v1
-                                           |
-                          +----------------+----------------+
-                          |                                 |
-                  message-persistence                 message-audit
-                          |                                 |
-                          v                                 v
-                 persist messages in DB            structured JSON log 
+                    +------+----------------+
+                    |                       |
+            score <= 0.70          score > 0.70
+                    |               +-------+--------+
+                    |               |                |
+                    |        score <= 0.95      score > 0.95
+                    |               |                |
+                    |         MessageRejected   submitted DLT
+                    |               |
+            MessageValidated        |
+                    +-------+-------+
+                            |
+                            v
+                 poc.messages.results.v1
+                            |
+              +-------------+-------------+
+              |                           |
+      message-persistence           message-audit
+              |                           |
+              v                           v
+     persist messages in DB       structured JSON log
 ```
 
 `messageId` is used as the Kafka record key so all events for one message are
-routed to the same partition. A rejected message is a business result and is
-therefore published as an event; the DLT is reserved for technical failures in
-a later milestone.
+routed to the same partition. The validation service asks Jev for a profanity
+score on the 0–1 scale. Scores through `0.70` produce `MessageValidated`; scores
+above `0.70` through `0.95` produce `MessageRejected`; scores above `0.95` go to
+the submitted DLT. Technical processing failures also go to that DLT after
+Kafka listener retries.
 
 ## Local observability
 

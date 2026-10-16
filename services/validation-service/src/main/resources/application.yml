@@ -23,6 +23,20 @@ spring:
 server:
   port: ${SERVER_PORT:8081}
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+moderation:
+  reject-threshold: ${MODERATION_REJECT_THRESHOLD:0.7}
+  dlt-threshold: ${MODERATION_DLT_THRESHOLD:0.95}
+
 logging:
   structured:
     json:

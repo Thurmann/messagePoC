@@ -14,6 +14,16 @@ spring:
     listener:
       ack-mode: record
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
 server:
   port: ${SERVER_PORT:8082}
 

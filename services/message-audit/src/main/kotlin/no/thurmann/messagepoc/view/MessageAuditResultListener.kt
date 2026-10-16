@@ -2,6 +2,7 @@ package no.thurmann.messagepoc.view
 
 import no.thurmann.messagepoc.contracts.KafkaTopics
 import no.thurmann.messagepoc.contracts.MessageRejectedEvent
+import no.thurmann.messagepoc.contracts.MessageSubmittedEvent
 import no.thurmann.messagepoc.contracts.MessageValidatedEvent
 import org.slf4j.LoggerFactory
 import org.springframework.kafka.annotation.KafkaHandler
@@ -45,10 +46,15 @@ class MessageAuditResultListener {
     ) {
         if (topic == KafkaTopics.MESSAGE_SUBMITTED_DLT) {
             val eventType = event::class.qualifiedName ?: event::class.simpleName ?: "unknown"
+            val submittedEvent = event as? MessageSubmittedEvent
             logger.atInfo()
                 .addKeyValue("result", "DLT")
                 .addKeyValue("topic", topic)
                 .addKeyValue("eventType", eventType)
+                .addKeyValue("eventId", submittedEvent?.eventId)
+                .addKeyValue("messageId", submittedEvent?.messageId)
+                .addKeyValue("correlationId", submittedEvent?.correlationId)
+                .addKeyValue("profanityScore", submittedEvent?.profanityScore)
                 .addKeyValue("data", event)
                 .log("Received DLT event on type={}", eventType)
             return
@@ -77,6 +83,11 @@ class MessageAuditResultListener {
             .addKeyValue("result", result)
             .addKeyValue("reason", reason)
             .addKeyValue("text", text)
+            .addKeyValue("profanityScore", when (event) {
+                is MessageValidatedEvent -> event.profanityScore
+                is MessageRejectedEvent -> event.profanityScore
+                else -> null
+            })
             .addKeyValue("topic", topic)
             .addKeyValue("partition", partition)
             .addKeyValue("offset", offset)

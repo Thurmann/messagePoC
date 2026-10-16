@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: message-poc-config
+data:
+  DEPLOYMENT_ENVIRONMENT: poc
+  LOGGING_STRUCTURED_FORMAT_CONSOLE: logstash
+  KAFKA_BOOTSTRAP_SERVERS: kafka-bootstrap.example.net:9092
+  SPRING_KAFKA_PROPERTIES_SECURITY_PROTOCOL: SASL_SSL
+  SPRING_KAFKA_PROPERTIES_SASL_MECHANISM: PLAIN
+  JDBC_URL: jdbc:postgresql://postgres.example.net:5432/message_poc
+  DB_USER: message_poc
+  LOKI_URL: https://loki.example.net
+  TYPESAFE_API_URL: https://api.typesafe.ai/v1/systemone
+  MODERATION_REJECT_THRESHOLD: "0.7"
+  MODERATION_DLT_THRESHOLD: "0.95"
+  JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=70

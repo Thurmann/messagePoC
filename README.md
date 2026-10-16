@@ -1,9 +1,9 @@
 # Message PoC
 
-Local Kotlin/Spring Boot PoC for learning Kafka application development. The
-project contains three services, shared event contracts, Kafka in KRaft mode,
-PostgreSQL for a later milestone, Kafbat UI, and centralized local logging with
-Grafana Alloy, Loki, and Grafana.
+Kotlin/Spring Boot PoC for Kafka application development. The project contains
+four services, shared event contracts, Kafka, PostgreSQL-backed message
+results, Kafbat UI, and centralized local logging with Grafana Alloy, Loki, and
+Grafana.
 
 ## Prerequisites
 
@@ -14,6 +14,13 @@ The project uses its own Gradle Wrapper; no global Gradle installation is
 required.
 
 ## Start the complete local environment
+
+Set a TypeSafe API key before starting the validation service:
+
+```bash
+cp .env.example .env
+# Edit .env and set TYPESAFE_API_KEY
+```
 
 ```bash
 docker compose up --build -d
@@ -53,7 +60,7 @@ Send a message using the helper script:
 ```
 
 It posts to `http://localhost:8080/api/messages`. Set `MESSAGE_API_URL` to use a
-different API address. The inbox refreshes every three seconds; messages appear
+different API address. The inbox refreshes every five seconds; messages appear
 after the Kafka validation and persistence steps finish.
 
 The database-backed JSON endpoint is also available at
@@ -61,29 +68,42 @@ The database-backed JSON endpoint is also available at
 The adjacent audit panel reads the 50 newest result entries from `message-audit`
 through Loki at `http://localhost:8083/api/audit-logs`.
 
-Accepted by the validation rule:
+The validation service sends each submitted text to Jev and asks:
+“Does the text contain any profanities, cursing or very rude descriptions?”
+Jev returns a score from 0 to 1. Scores at or below `0.70` are accepted;
+scores above `0.70` through `0.95` are rejected; scores above `0.95` are sent
+to the DLT. The thresholds can be changed with
+`MODERATION_REJECT_THRESHOLD` and `MODERATION_DLT_THRESHOLD`.
+Submitted text is sent to the TypeSafe API for scoring; avoid sending sensitive
+content unless that processing is appropriate for your data.
+
+Accepted example:
 
 ```bash
 curl -i -X POST http://localhost:8080/api/messages \
   -H 'Content-Type: application/json' \
-  -d '{"text":"Order 123 is ready"}'
+  -d '{"text":"Thanks for your help with this order."}'
 ```
 
-Rejected by the validation rule:
+Rejected example (Jev's assessment can vary by model version):
 
 ```bash
 curl -i -X POST http://localhost:8080/api/messages \
   -H 'Content-Type: application/json' \
-  -d '{"text":"No digits here"}'
+  -d '{"text":"You are a disgusting idiot, get lost."}'
 ```
 
 The API returns `202 Accepted`. The final `VALIDATED` or `REJECTED` result is
-visible in the application logs in Grafana and as an event in Kafbat UI.
+visible in the application logs in Grafana and as an event in Kafbat UI. The
+validation service needs `TYPESAFE_API_KEY`; if Jev is unavailable, Kafka's
+listener retry handler sends the failed record to the DLT after its retries.
 
 ## Force a dead-letter event
 
-The validation service retries a failed record twice, then publishes it to
-`poc.messages.submitted.v1-dlt`. To trigger this path:
+The validation service publishes messages with Jev scores above the configured
+DLT threshold to `poc.messages.submitted.v1-dlt`. The listener also retries
+unexpected processing failures twice before sending them to that DLT. To force
+the technical-failure path locally:
 
 ```bash
 ./sendmessage.sh "__FORCE_DLT__"
@@ -93,6 +113,20 @@ This reserved text deliberately makes the validation listener throw an
 exception. Inspect the DLT in Kafbat UI at <http://localhost:8085>. The message
 is sent through the API successfully, but it is not written to the normal
 results topic or the message inbox.
+
+## Deployment
+
+The application services are containerized and can run on Kubernetes-compatible
+platforms. The portable manifests and instructions are in
+[`deploy/kubernetes`](deploy/kubernetes/README.md). They expect managed or
+platform-provided Kafka, PostgreSQL, and Loki; no cloud-specific stateful
+services are bundled into the application deployment. Set `TYPESAFE_API_KEY`
+through the platform's secret manager.
+
+Vercel can manage DNS for a domain whose runtime is hosted elsewhere. Point the
+chosen subdomain CNAME at the hostname supplied by the cluster ingress/load
+balancer, and configure TLS at that ingress. See Vercel's
+[instructions for pointing a subdomain to an external service](https://vercel.com/kb/guide/pointing-subdomains-to-external-services).
 
 ## Search centralized logs
 

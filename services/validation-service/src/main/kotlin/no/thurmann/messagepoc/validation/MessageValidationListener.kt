@@ -34,7 +34,31 @@ class MessageValidationListener(
             throw IllegalStateException("Forced failure for dead-letter queue demonstration")
         }
 
-        val result = if (validationRule.accepts(event.payload.text)) {
+        val profanityScore = validationRule.score(event.payload.text)
+        val decision = validationRule.decide(profanityScore)
+
+        if (decision == ValidationDecision.DLT) {
+            val sendResult = kafkaTemplate
+                .send(KafkaTopics.MESSAGE_SUBMITTED_DLT, event.messageId.toString(), event.copy(profanityScore = profanityScore))
+                .get(5, TimeUnit.SECONDS)
+
+            logger.atWarn()
+                .addKeyValue("eventId", event.eventId)
+                .addKeyValue("eventType", event.eventType)
+                .addKeyValue("messageId", event.messageId)
+                .addKeyValue("correlationId", event.correlationId)
+                .addKeyValue("profanityScore", profanityScore)
+                .addKeyValue("sourceTopic", sourceTopic)
+                .addKeyValue("sourcePartition", sourcePartition)
+                .addKeyValue("sourceOffset", sourceOffset)
+                .addKeyValue("targetTopic", sendResult.recordMetadata.topic())
+                .addKeyValue("targetPartition", sendResult.recordMetadata.partition())
+                .addKeyValue("targetOffset", sendResult.recordMetadata.offset())
+                .log("Message sent to dead-letter topic after profanity scoring")
+            return
+        }
+
+        val result = if (decision == ValidationDecision.ACCEPT) {
             MessageValidatedEvent(
                 eventId = UUID.randomUUID(),
                 occurredAt = Instant.now(),
@@ -43,6 +67,7 @@ class MessageValidationListener(
                 causationId = event.eventId,
                 producer = "validation-service",
                 payload = MessageValidatedPayload(event.payload.text),
+                profanityScore = profanityScore,
             )
         } else {
             MessageRejectedEvent(
@@ -54,8 +79,9 @@ class MessageValidationListener(
                 producer = "validation-service",
                 payload = MessageRejectedPayload(
                     text = event.payload.text,
-                    reason = "MESSAGE_CONTAINS_NO_DIGIT",
+                    reason = "PROFANITY_SCORE_ABOVE_${validationRule.rejectThreshold} (score=$profanityScore)",
                 ),
+                profanityScore = profanityScore,
             )
         }
 
@@ -72,6 +98,7 @@ class MessageValidationListener(
             .addKeyValue("sourceTopic", sourceTopic)
             .addKeyValue("sourcePartition", sourcePartition)
             .addKeyValue("sourceOffset", sourceOffset)
+            .addKeyValue("profanityScore", profanityScore)
             .addKeyValue("targetTopic", sendResult.recordMetadata.topic())
             .addKeyValue("targetPartition", sendResult.recordMetadata.partition())
             .addKeyValue("targetOffset", sendResult.recordMetadata.offset())
@@ -82,6 +109,35 @@ class MessageValidationListener(
 private const val DLT_TEST_MESSAGE = "__FORCE_DLT__"
 
 @Component
-class ValidationRule {
-    fun accepts(text: String): Boolean = text.any(Char::isDigit)
+class ValidationRule(
+    private val profanityScorer: ProfanityScorer,
+    @org.springframework.beans.factory.annotation.Value("\${moderation.reject-threshold:0.7}")
+    val rejectThreshold: Double,
+    @org.springframework.beans.factory.annotation.Value("\${moderation.dlt-threshold:0.95}")
+    private val dltThreshold: Double,
+) {
+    init {
+        require(rejectThreshold >= 0.0 && rejectThreshold < dltThreshold && dltThreshold <= 1.0) {
+            "Moderation thresholds must satisfy 0 <= reject < DLT <= 1"
+        }
+    }
+
+    fun score(text: String): Double = profanityScorer.score(text).also {
+        require(it.isFinite() && it in 0.0..1.0) { "Profanity score must be between 0 and 1" }
+    }
+
+    fun decide(score: Double): ValidationDecision {
+        require(score.isFinite() && score in 0.0..1.0) { "Profanity score must be between 0 and 1" }
+        return when {
+            score > dltThreshold -> ValidationDecision.DLT
+            score > rejectThreshold -> ValidationDecision.REJECT
+            else -> ValidationDecision.ACCEPT
+        }
+    }
+}
+
+enum class ValidationDecision {
+    ACCEPT,
+    REJECT,
+    DLT,
 }

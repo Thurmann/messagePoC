@@ -49,6 +49,7 @@ class MessageController(
             .addKeyValue("eventType", event.eventType)
             .addKeyValue("messageId", event.messageId)
             .addKeyValue("correlationId", event.correlationId)
+            .addKeyValue("profanityScore", event.profanityScore)
             .addKeyValue("topic", sendResult.recordMetadata.topic())
             .addKeyValue("partition", sendResult.recordMetadata.partition())
             .addKeyValue("offset", sendResult.recordMetadata.offset())

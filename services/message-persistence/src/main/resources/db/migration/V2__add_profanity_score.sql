@@ -1,0 +1,2 @@
+ALTER TABLE message_result
+    ADD COLUMN IF NOT EXISTS profanity_score DOUBLE PRECISION NULL;

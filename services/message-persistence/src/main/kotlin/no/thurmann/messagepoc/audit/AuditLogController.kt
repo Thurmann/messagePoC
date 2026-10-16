@@ -89,6 +89,7 @@ class AuditLogController(
             text = fields.text("text"),
             messageId = fields.text("messageId"),
             correlationId = fields.text("correlationId"),
+            profanityScore = fields.get("profanityScore")?.takeIf(JsonNode::isNumber)?.doubleValue(),
         )
     }
 
@@ -105,4 +106,5 @@ data class AuditLogEntry(
     val text: String?,
     val messageId: String?,
     val correlationId: String?,
+    val profanityScore: Double?,
 )

@@ -24,6 +24,7 @@ data class MessageSubmittedEvent(
     override val causationId: UUID? = null,
     override val producer: String,
     val payload: MessageSubmittedPayload,
+    val profanityScore: Double? = null,
 ) : MessageEvent
 
 data class MessageSubmittedPayload(
@@ -40,6 +41,7 @@ data class MessageValidatedEvent(
     override val causationId: UUID,
     override val producer: String,
     val payload: MessageValidatedPayload,
+    val profanityScore: Double? = null,
 ) : MessageEvent
 
 data class MessageValidatedPayload(
@@ -56,6 +58,7 @@ data class MessageRejectedEvent(
     override val causationId: UUID,
     override val producer: String,
     val payload: MessageRejectedPayload,
+    val profanityScore: Double? = null,
 ) : MessageEvent
 
 data class MessageRejectedPayload(

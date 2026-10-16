@@ -23,6 +23,7 @@ data class MessageResultResponse(
     val status: MessageResultStatus,
     val text: String,
     val reason: String?,
+    val profanityScore: Double?,
 ) {
     companion object {
         fun from(result: MessageResult) =
@@ -33,6 +34,7 @@ data class MessageResultResponse(
                 status = result.status,
                 text = result.text,
                 reason = result.reason,
+                profanityScore = result.profanityScore,
             )
     }
 }

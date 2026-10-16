@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - configmap.yaml
+  - ingress.yaml
+  - workloads.yaml
+
+images:
+  - name: message-poc/message-api
+    newName: ghcr.io/your-org/message-api
+    newTag: 0.1.0
+  - name: message-poc/validation-service
+    newName: ghcr.io/your-org/validation-service
+    newTag: 0.1.0
+  - name: message-poc/message-persistence
+    newName: ghcr.io/your-org/message-persistence
+    newTag: 0.1.0
+  - name: message-poc/message-audit
+    newName: ghcr.io/your-org/message-audit
+    newTag: 0.1.0

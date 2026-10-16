@@ -91,6 +91,12 @@
           reason.textContent = item.reason;
           article.append(reason);
         }
+        if (item.profanityScore !== null && item.profanityScore !== undefined) {
+          const score = document.createElement('div');
+          score.className = 'log-meta';
+          score.textContent = `profanity score ${item.profanityScore}`;
+          article.append(score);
+        }
         return article;
       }));
     }
@@ -122,7 +128,7 @@
         }
         const meta = document.createElement('div');
         meta.className = 'log-meta';
-        meta.textContent = [item.messageId && `message ${item.messageId}`, item.correlationId && `correlation ${item.correlationId}`].filter(Boolean).join(' · ');
+        meta.textContent = [item.messageId && `message ${item.messageId}`, item.correlationId && `correlation ${item.correlationId}`, item.profanityScore !== null && item.profanityScore !== undefined && `profanity score ${item.profanityScore}`].filter(Boolean).join(' · ');
         if (meta.textContent) article.append(meta);
         return article;
       }));

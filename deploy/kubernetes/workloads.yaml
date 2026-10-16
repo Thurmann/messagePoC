@@ -1,0 +1,221 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: message-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: message-api
+  template:
+    metadata:
+      labels:
+        app: message-api
+    spec:
+      containers:
+        - name: app
+          image: message-poc/message-api:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: message-poc-config
+          env:
+            - name: SPRING_KAFKA_PROPERTIES_SASL_JAAS_CONFIG
+              valueFrom:
+                secretKeyRef:
+                  name: message-poc-secrets
+                  key: SPRING_KAFKA_PROPERTIES_SASL_JAAS_CONFIG
+                  optional: true
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 768Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: message-api
+spec:
+  selector:
+    app: message-api
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: validation-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: validation-service
+  template:
+    metadata:
+      labels:
+        app: validation-service
+    spec:
+      containers:
+        - name: app
+          image: message-poc/validation-service:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8081
+          envFrom:
+            - configMapRef:
+                name: message-poc-config
+          env:
+            - name: TYPESAFE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: message-poc-secrets
+                  key: TYPESAFE_API_KEY
+            - name: SPRING_KAFKA_PROPERTIES_SASL_JAAS_CONFIG
+              valueFrom:
+                secretKeyRef:
+                  name: message-poc-secrets
+                  key: SPRING_KAFKA_PROPERTIES_SASL_JAAS_CONFIG
+                  optional: true
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 768Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: message-persistence
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: message-persistence
+  template:
+    metadata:
+      labels:
+        app: message-persistence
+    spec:
+      containers:
+        - name: app
+          image: message-poc/message-persistence:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8083
+          envFrom:
+            - configMapRef:
+                name: message-poc-config
+          env:
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: message-poc-secrets
+                  key: DB_PASSWORD
+            - name: SPRING_KAFKA_PROPERTIES_SASL_JAAS_CONFIG
+              valueFrom:
+                secretKeyRef:
+                  name: message-poc-secrets
+                  key: SPRING_KAFKA_PROPERTIES_SASL_JAAS_CONFIG
+                  optional: true
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 768Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: message-persistence
+spec:
+  selector:
+    app: message-persistence
+  ports:
+    - name: http
+      port: 8083
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: message-audit
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: message-audit
+  template:
+    metadata:
+      labels:
+        app: message-audit
+    spec:
+      containers:
+        - name: app
+          image: message-poc/message-audit:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8082
+          envFrom:
+            - configMapRef:
+                name: message-poc-config
+          env:
+            - name: SPRING_KAFKA_PROPERTIES_SASL_JAAS_CONFIG
+              valueFrom:
+                secretKeyRef:
+                  name: message-poc-secrets
+                  key: SPRING_KAFKA_PROPERTIES_SASL_JAAS_CONFIG
+                  optional: true
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 768Mi
