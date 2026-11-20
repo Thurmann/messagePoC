@@ -3,6 +3,7 @@ package no.thurmann.messagepoc.audit
 import no.thurmann.messagepoc.contracts.KafkaTopics
 import no.thurmann.messagepoc.contracts.MessageRejectedEvent
 import no.thurmann.messagepoc.contracts.MessageValidatedEvent
+import no.thurmann.messagepoc.moderation.ModerationService
 import org.slf4j.LoggerFactory
 import org.springframework.kafka.annotation.KafkaHandler
 import org.springframework.kafka.annotation.KafkaListener
@@ -13,7 +14,7 @@ import org.springframework.stereotype.Component
 @Component
 @KafkaListener(topics = [KafkaTopics.MESSAGE_RESULTS])
 class MessageResultListener(
-    val messageResultRepository: MessageResultRepository
+    private val moderationService: ModerationService
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -25,7 +26,7 @@ class MessageResultListener(
         @Header(KafkaHeaders.OFFSET) offset: Long,
     ) {
         val result = MessageResult.from(event)
-        messageResultRepository.save(result)
+        moderationService.record(result)
         logResult(result, topic, partition, offset)
     }
 
@@ -37,7 +38,7 @@ class MessageResultListener(
         @Header(KafkaHeaders.OFFSET) offset: Long,
     ) {
         val result = MessageResult.from(event)
-        messageResultRepository.save(result)
+        moderationService.record(result)
         logResult(result, topic, partition, offset)
     }
 

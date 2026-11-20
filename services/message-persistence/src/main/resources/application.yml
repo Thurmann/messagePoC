@@ -24,6 +24,15 @@ spring:
 server:
   port: ${SERVER_PORT:8083}
 
+google:
+  client-id: ${GOOGLE_CLIENT_ID:}
+
+admin:
+  emails: ${ADMIN_EMAILS:christian.thurmann@gmail.com}
+
+app:
+  message-api-base-url: ${MESSAGE_API_BASE_URL:}
+
 moderation:
   warning-threshold: ${MODERATION_WARNING_THRESHOLD:3}
   ban-threshold: ${MODERATION_BAN_THRESHOLD:6}
