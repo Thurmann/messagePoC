@@ -23,6 +23,8 @@ The release workflow then:
 
 1. Builds and tests with `-PreleaseVersion=0.2.0`, so the service jars are named
    `<service>-0.2.0.jar` (without the property, the version stays `0.1.0-SNAPSHOT`).
+   The image builds pass the same version through the Dockerfile's
+   `RELEASE_VERSION` build argument.
 2. Builds the four images for `linux/amd64` and pushes them to
    `ghcr.io/<owner>/message-poc/<service>` with the tags `0.2.0`, `0.2` and `latest`.
 3. Creates the GitHub release `v0.2.0` with generated notes, the image list and the
@@ -51,8 +53,10 @@ workflow does not create these.
 It deploys `deploy/azure` as it is at the release tag. The workflow sets the
 image names and tags itself, so the `<your-acr>` placeholders and `newTag` values
 in the overlay are ignored. Any other `<...>` placeholder (such as `<pg-server>`)
-stops the deployment, so commit the real values in `deploy/azure/kustomization.yaml`
-before you tag the release.
+or `example.com` value (the Ingress hosts and `ADMIN_EMAILS`) stops the
+deployment. Commit the real values in `deploy/azure/kustomization.yaml` before
+you tag the release; otherwise a deployment would reset the live Ingress and
+ConfigMap to the committed values.
 
 The workflow signs in to Azure with OpenID Connect, so no Azure secret is stored
 in GitHub.
@@ -70,8 +74,10 @@ in GitHub.
      (for example **Azure Kubernetes Service RBAC Writer**), and add
      `kubelogin convert-kubeconfig -l azurecli` after `az aks get-credentials` in `deploy.yml`.
 3. In GitHub, create the environment `production` (Settings → Environments). Add
-   required reviewers there if each deployment should wait for approval. Add
-   these environment variables:
+   required reviewers there if each deployment should wait for approval.
+   Automatic deployments run on the release tag, so leave the deployment
+   branch/tag policy unset, or allow the tag pattern `v*` (and `main`, for manual
+   runs). Add these environment variables:
 
    | Variable | Value |
    | --- | --- |

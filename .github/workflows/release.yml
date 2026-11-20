@@ -97,7 +97,9 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
-          build-args: SERVICE=${{ matrix.service }}
+          build-args: |
+            SERVICE=${{ matrix.service }}
+            RELEASE_VERSION=${{ needs.verify.outputs.version }}
           platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}

@@ -93,8 +93,17 @@ jobs:
             | sed -E "s#^([[:space:]]*image:[[:space:]]*).*/message-poc/(message-api|validation-service|message-persistence|message-audit):.*#\1${login_server}/message-poc/\2:${VERSION}#" \
             > "$RUNNER_TEMP/manifests.yaml"
           grep -E '^[[:space:]]*image:' "$RUNNER_TEMP/manifests.yaml"
-          if grep -nE '<[a-z][a-z0-9-]*>' "$RUNNER_TEMP/manifests.yaml"; then
-            echo "::error::deploy/azure still has <...> placeholders at v${VERSION}; fill them in (docs/deploy-to-azure.md step 9) and release again"
+          for svc in $SERVICES; do
+            want="${login_server}/message-poc/${svc}:${VERSION}"
+            count=$(awk -v want="$want" '$1 == "image:" && $2 == want { n++ } END { print n + 0 }' "$RUNNER_TEMP/manifests.yaml")
+            if [[ "$count" != 1 ]]; then
+              echo "::error::Expected one image $want in deploy/azure, found $count; the overlay's newName must end in /message-poc/${svc}"
+              exit 1
+            fi
+          done
+          # <...> placeholders and the example.com values from deploy/azure must be replaced before deploying.
+          if grep -nE '<[a-z][a-z0-9-]*>|example\.com' "$RUNNER_TEMP/manifests.yaml"; then
+            echo "::error::deploy/azure still has placeholder values at v${VERSION}; commit the real values (docs/deploy-to-azure.md step 9) and release again"
             exit 1
           fi
 
