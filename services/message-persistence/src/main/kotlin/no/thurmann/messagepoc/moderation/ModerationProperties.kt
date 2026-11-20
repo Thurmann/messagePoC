@@ -16,7 +16,7 @@ data class ModerationProperties(
         Duration.ofHours(24),
     ),
     val escalationWindow: Duration = Duration.ofDays(1),
-    val technicalDltCountsAsStrike: Boolean = true,
+    val technicalDltCountsAsStrike: Boolean = false,
 ) {
     init {
         require(banLadder.isNotEmpty()) { "moderation.ban-ladder must not be empty" }

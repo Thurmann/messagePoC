@@ -68,16 +68,17 @@ moderated before it is shown to everyone:
    chat shows the message to everyone, or shows "A message from <handle> was
    removed by moderation." if it was rejected.
 
-> **Important:** `MODERATION_TECHNICAL_DLT_COUNTS_AS_STRIKE` defaults to `true`.
-> If `TYPESAFE_API_KEY` is missing or Jev is down, every message goes to the DLT
-> and counts as a strike, so users are banned after 6 messages. Set
-> `MODERATION_TECHNICAL_DLT_COUNTS_AS_STRIKE=false` to avoid that.
+> **Note:** `MODERATION_TECHNICAL_DLT_COUNTS_AS_STRIKE` defaults to `false`, so a
+> message that ends in the DLT because of a technical failure (for example a
+> missing `TYPESAFE_API_KEY` or Jev being down) is not a strike. Set it to `true`
+> to count those as well; users would then be banned after 6 messages during an
+> outage.
 
 Strikes and bans:
 
 - A rejected message, or a message whose score sends it to the DLT, is one strike.
-  A technical failure that ends in the DLT is also a strike unless
-  `MODERATION_TECHNICAL_DLT_COUNTS_AS_STRIKE=false`.
+  A technical failure that ends in the DLT is not a strike unless
+  `MODERATION_TECHNICAL_DLT_COUNTS_AS_STRIKE=true`.
 - At 3 strikes (`MODERATION_WARNING_THRESHOLD`) you get a warning.
 - At 6 strikes (`MODERATION_BAN_THRESHOLD`) you are banned temporarily. The ban
   lengths follow `MODERATION_BAN_LADDER`, which defaults to 1 minute, 5 minutes,
@@ -120,7 +121,7 @@ Defaults apply when a variable is unset.
 | `MODERATION_BAN_THRESHOLD` | message-persistence | `6` | Strikes that trigger a ban |
 | `MODERATION_BAN_LADDER` | message-persistence | `1m,5m,30m,2h,12h,24h` | Ban durations by step; the last step repeats |
 | `MODERATION_ESCALATION_WINDOW` | message-persistence | `1d` | Window after a ban in which the next ban escalates |
-| `MODERATION_TECHNICAL_DLT_COUNTS_AS_STRIKE` | message-persistence | `true` | Whether technical DLT failures count as strikes. **Warning:** with a missing `TYPESAFE_API_KEY` or Jev down every message ends in the DLT and counts, banning users after 6 messages; set `false` to avoid that |
+| `MODERATION_TECHNICAL_DLT_COUNTS_AS_STRIKE` | message-persistence | `false` | Whether technical DLT failures count as strikes. **Warning:** if set to `true`, a missing `TYPESAFE_API_KEY` or a Jev outage sends every message to the DLT and bans users after 6 messages |
 
 `message-api` also uses the database variables `DB_HOST`, `DB_PORT`, `DB_NAME`,
 `DB_USER`, `DB_PASSWORD`, and `JDBC_URL`, the same as `message-persistence`. It
@@ -218,8 +219,8 @@ This reserved text deliberately makes the validation listener throw an
 exception. Inspect the DLT in Kafbat UI at <http://localhost:8085>. The message
 is sent through the API successfully, but it is not shown in the public chat.
 `message-persistence` consumes the DLT event, stores it as a `DLT` row, and shows
-it in the admin moderation log. It counts as a strike unless
-`MODERATION_TECHNICAL_DLT_COUNTS_AS_STRIKE=false`.
+it in the admin moderation log. It does not count as a strike unless
+`MODERATION_TECHNICAL_DLT_COUNTS_AS_STRIKE=true`.
 
 ## Deployment
 

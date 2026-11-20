@@ -110,7 +110,7 @@ the pods restart.
 | `MODERATION_BAN_THRESHOLD` | `6` | Strikes at which a temporary ban starts |
 | `MODERATION_BAN_LADDER` | `1m,5m,30m,2h,12h,24h` | Ban durations by escalation step; the last step repeats |
 | `MODERATION_ESCALATION_WINDOW` | `1d` | A new ban counts as the next step if it starts within this time after the previous ban ended |
-| `MODERATION_TECHNICAL_DLT_COUNTS_AS_STRIKE` | `true` | Whether messages that failed technically and went to the DLT count as strikes |
+| `MODERATION_TECHNICAL_DLT_COUNTS_AS_STRIKE` | `false` | Whether messages that failed technically and went to the DLT count as strikes |
 
 Score-based DLT and rejected messages always count as strikes. Strikes reset when
 a ban ends.
