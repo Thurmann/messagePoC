@@ -5,7 +5,9 @@ metadata:
   labels:
     strimzi.io/cluster: message-poc
 spec:
-  replicas: 1
+  # Three combined controller+broker nodes: a 3-voter KRaft quorum that tolerates
+  # one node down. Each node gets its own persistent volume.
+  replicas: 3
   roles:
     - controller
     - broker
@@ -13,6 +15,19 @@ spec:
     type: persistent-claim
     size: 10Gi
     deleteClaim: false
+  template:
+    pod:
+      affinity:
+        # Prefer spreading brokers over different nodes (one per node when possible).
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    strimzi.io/cluster: message-poc
+                    strimzi.io/pool-name: dual-role
 ---
 apiVersion: kafka.strimzi.io/v1beta2
 kind: Kafka
@@ -32,10 +47,12 @@ spec:
         type: internal
         tls: false
     config:
-      offsets.topic.replication.factor: 1
-      transaction.state.log.replication.factor: 1
-      transaction.state.log.min.isr: 1
-      default.replication.factor: 1
-      min.insync.replicas: 1
+      # RF 3 with min ISR 2: writes (acks=all) keep working with one broker down
+      # and across rolling restarts. Do not set min ISR to 3.
+      offsets.topic.replication.factor: 3
+      transaction.state.log.replication.factor: 3
+      transaction.state.log.min.isr: 2
+      default.replication.factor: 3
+      min.insync.replicas: 2
   entityOperator:
     topicOperator: {}
