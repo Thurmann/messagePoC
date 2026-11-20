@@ -29,6 +29,17 @@ class PostingGuardTest {
     }
 
     @Test
+    fun `admin with active ban is allowed`() {
+        val until = now.plusSeconds(600)
+        assertEquals(PostingDecision.Allowed("root"), PostingGuard.evaluate(UserStatus("root", until, isAdmin = true), now))
+    }
+
+    @Test
+    fun `admin without handle still requires handle`() {
+        assertEquals(PostingDecision.HandleRequired, PostingGuard.evaluate(UserStatus(null, null, isAdmin = true), now))
+    }
+
+    @Test
     fun `treats expired ban as allowed`() {
         assertEquals(PostingDecision.Allowed("alice"), PostingGuard.evaluate(UserStatus("alice", now.minusSeconds(1)), now))
         assertEquals(PostingDecision.Allowed("alice"), PostingGuard.evaluate(UserStatus("alice", now), now))

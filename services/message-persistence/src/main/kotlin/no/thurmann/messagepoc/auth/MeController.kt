@@ -33,17 +33,18 @@ class MeController(
         val user = upsertUser(jwt)
         val strikes = moderationService.currentStrikes(user.googleSub)
         val now = Instant.now()
-        val ban = moderationService.activeBan(user.googleSub, now)?.let {
+        val isAdmin = adminDirectory.isAdmin(jwt)
+        val ban = if (isAdmin) null else moderationService.activeBan(user.googleSub, now)?.let {
             BanInfo(until = it.endsAt, remainingSeconds = Duration.between(now, it.endsAt).seconds.coerceAtLeast(0))
         }
         return MeResponse(
             email = user.email,
             handle = user.handle,
-            isAdmin = adminDirectory.isAdmin(jwt),
+            isAdmin = isAdmin,
             strikes = strikes,
             warningThreshold = properties.warningThreshold,
             banThreshold = properties.banThreshold,
-            warning = moderationPolicy.isWarning(strikes),
+            warning = moderationPolicy.isWarning(strikes, isAdmin),
             ban = ban,
         )
     }

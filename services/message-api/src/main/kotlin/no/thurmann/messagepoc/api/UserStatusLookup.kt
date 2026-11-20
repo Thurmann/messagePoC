@@ -17,11 +17,13 @@ class JdbcUserStatusLookup(private val jdbcTemplate: JdbcTemplate) : UserStatusL
             SELECT u.handle,
                    (SELECT b.ends_at FROM user_ban b
                      WHERE b.user_id = u.google_sub AND b.ends_at > ?
-                     ORDER BY b.ends_at DESC LIMIT 1) AS ban_ends_at
+                     ORDER BY b.ends_at DESC LIMIT 1) AS ban_ends_at,
+                   (a.email IS NOT NULL) AS is_admin
             FROM app_user u
+            LEFT JOIN admin_user a ON a.email = lower(u.email)
             WHERE u.google_sub = ?
             """.trimIndent(),
-            { rs, _ -> UserStatus(rs.getString("handle"), rs.getTimestamp("ban_ends_at")?.toInstant()) },
+            { rs, _ -> UserStatus(rs.getString("handle"), rs.getTimestamp("ban_ends_at")?.toInstant(), rs.getBoolean("is_admin")) },
             Timestamp.from(now),
             sub,
         ).firstOrNull()

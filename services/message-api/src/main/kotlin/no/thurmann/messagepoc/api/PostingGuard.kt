@@ -6,6 +6,7 @@ import java.time.Instant
 data class UserStatus(
     val handle: String?,
     val banEndsAt: Instant?,
+    val isAdmin: Boolean = false,
 )
 
 sealed interface PostingDecision {
@@ -17,6 +18,7 @@ sealed interface PostingDecision {
 object PostingGuard {
     fun evaluate(status: UserStatus?, now: Instant): PostingDecision {
         val handle = status?.handle ?: return PostingDecision.HandleRequired
+        if (status.isAdmin) return PostingDecision.Allowed(handle)
         val banEndsAt = status.banEndsAt
         if (banEndsAt != null && banEndsAt.isAfter(now)) {
             val millis = Duration.between(now, banEndsAt).toMillis()
