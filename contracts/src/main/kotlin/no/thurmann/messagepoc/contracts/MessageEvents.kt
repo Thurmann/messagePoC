@@ -25,7 +25,13 @@ data class MessageSubmittedEvent(
     override val producer: String,
     val payload: MessageSubmittedPayload,
     val profanityScore: Double? = null,
+    val author: MessageAuthor? = null,
 ) : MessageEvent
+
+data class MessageAuthor(
+    val userId: String,
+    val handle: String,
+)
 
 data class MessageSubmittedPayload(
     val text: String,
@@ -42,6 +48,7 @@ data class MessageValidatedEvent(
     override val producer: String,
     val payload: MessageValidatedPayload,
     val profanityScore: Double? = null,
+    val author: MessageAuthor? = null,
 ) : MessageEvent
 
 data class MessageValidatedPayload(
@@ -59,6 +66,7 @@ data class MessageRejectedEvent(
     override val producer: String,
     val payload: MessageRejectedPayload,
     val profanityScore: Double? = null,
+    val author: MessageAuthor? = null,
 ) : MessageEvent
 
 data class MessageRejectedPayload(

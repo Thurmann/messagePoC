@@ -1,6 +1,7 @@
 package no.thurmann.messagepoc.validation
 
 import no.thurmann.messagepoc.contracts.KafkaTopics
+import no.thurmann.messagepoc.contracts.MessageEvent
 import no.thurmann.messagepoc.contracts.MessageRejectedEvent
 import no.thurmann.messagepoc.contracts.MessageRejectedPayload
 import no.thurmann.messagepoc.contracts.MessageSubmittedEvent
@@ -58,32 +59,7 @@ class MessageValidationListener(
             return
         }
 
-        val result = if (decision == ValidationDecision.ACCEPT) {
-            MessageValidatedEvent(
-                eventId = UUID.randomUUID(),
-                occurredAt = Instant.now(),
-                messageId = event.messageId,
-                correlationId = event.correlationId,
-                causationId = event.eventId,
-                producer = "validation-service",
-                payload = MessageValidatedPayload(event.payload.text),
-                profanityScore = profanityScore,
-            )
-        } else {
-            MessageRejectedEvent(
-                eventId = UUID.randomUUID(),
-                occurredAt = Instant.now(),
-                messageId = event.messageId,
-                correlationId = event.correlationId,
-                causationId = event.eventId,
-                producer = "validation-service",
-                payload = MessageRejectedPayload(
-                    text = event.payload.text,
-                    reason = "PROFANITY_SCORE_ABOVE_${validationRule.rejectThreshold} (score=$profanityScore)",
-                ),
-                profanityScore = profanityScore,
-            )
-        }
+        val result = buildResultEvent(event, decision, profanityScore, validationRule.rejectThreshold)
 
         val sendResult = kafkaTemplate
             .send(KafkaTopics.MESSAGE_RESULTS, event.messageId.toString(), result)
@@ -107,6 +83,43 @@ class MessageValidationListener(
 }
 
 private const val DLT_TEST_MESSAGE = "__FORCE_DLT__"
+
+internal fun buildResultEvent(
+    event: MessageSubmittedEvent,
+    decision: ValidationDecision,
+    profanityScore: Double,
+    rejectThreshold: Double,
+    eventId: UUID = UUID.randomUUID(),
+    occurredAt: Instant = Instant.now(),
+): MessageEvent =
+    if (decision == ValidationDecision.ACCEPT) {
+        MessageValidatedEvent(
+            eventId = eventId,
+            occurredAt = occurredAt,
+            messageId = event.messageId,
+            correlationId = event.correlationId,
+            causationId = event.eventId,
+            producer = "validation-service",
+            payload = MessageValidatedPayload(event.payload.text),
+            profanityScore = profanityScore,
+            author = event.author,
+        )
+    } else {
+        MessageRejectedEvent(
+            eventId = eventId,
+            occurredAt = occurredAt,
+            messageId = event.messageId,
+            correlationId = event.correlationId,
+            causationId = event.eventId,
+            producer = "validation-service",
+            payload = MessageRejectedPayload(
+                text = event.payload.text,
+                reason = "PROFANITY_SCORE_ABOVE_$rejectThreshold (score=$profanityScore)",
+            ),
+            profanityScore = profanityScore,
+            author = event.author,
+        )
+    }
 
 @Component
 class ValidationRule(

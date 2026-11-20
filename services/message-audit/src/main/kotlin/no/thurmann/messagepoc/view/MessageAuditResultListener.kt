@@ -88,6 +88,11 @@ class MessageAuditResultListener {
                 is MessageRejectedEvent -> event.profanityScore
                 else -> null
             })
+            .addKeyValue("authorHandle", when (event) {
+                is MessageValidatedEvent -> event.author?.handle
+                is MessageRejectedEvent -> event.author?.handle
+                else -> null
+            })
             .addKeyValue("topic", topic)
             .addKeyValue("partition", partition)
             .addKeyValue("offset", offset)

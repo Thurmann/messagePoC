@@ -7,6 +7,7 @@ import jakarta.persistence.Enumerated
 import jakarta.persistence.Id
 import jakarta.persistence.Table
 import no.thurmann.messagepoc.contracts.MessageRejectedEvent
+import no.thurmann.messagepoc.contracts.MessageSubmittedEvent
 import no.thurmann.messagepoc.contracts.MessageValidatedEvent
 import java.time.Instant
 import java.util.UUID
@@ -14,6 +15,7 @@ import java.util.UUID
 enum class MessageResultStatus {
     VALIDATED,
     REJECTED,
+    DLT,
 }
 
 @Entity
@@ -56,6 +58,18 @@ open class MessageResult(
 
     @field:Column(name = "profanity_score", nullable = true)
     open var profanityScore: Double? = null,
+
+    @field:Column(name = "author_id", nullable = true)
+    open var authorId: String? = null,
+
+    @field:Column(name = "author_handle", nullable = true)
+    open var authorHandle: String? = null,
+
+    @field:Column(name = "strike", nullable = false)
+    open var strike: Boolean = false,
+
+    @field:Column(name = "strikes_after", nullable = true)
+    open var strikesAfter: Int? = null,
 ) {
     companion object {
         fun from(event: MessageValidatedEvent): MessageResult =
@@ -72,6 +86,8 @@ open class MessageResult(
                 text = event.payload.text,
                 reason = null,
                 profanityScore = event.profanityScore,
+                authorId = event.author?.userId,
+                authorHandle = event.author?.handle,
             )
 
         fun from(event: MessageRejectedEvent): MessageResult =
@@ -88,6 +104,27 @@ open class MessageResult(
                 text = event.payload.text,
                 reason = event.payload.reason,
                 profanityScore = event.profanityScore,
+                authorId = event.author?.userId,
+                authorHandle = event.author?.handle,
+            )
+
+        fun fromDlt(event: MessageSubmittedEvent): MessageResult =
+            MessageResult(
+                eventId = event.eventId,
+                eventType = event.eventType,
+                eventVersion = event.eventVersion,
+                occurredAt = event.occurredAt,
+                messageId = event.messageId,
+                correlationId = event.correlationId,
+                causationId = event.causationId,
+                producer = event.producer,
+                status = MessageResultStatus.DLT,
+                text = event.payload.text,
+                reason = event.profanityScore?.let { "PROFANITY_SCORE_ABOVE_DLT_THRESHOLD (score=$it)" }
+                    ?: "PROCESSING_FAILURE",
+                profanityScore = event.profanityScore,
+                authorId = event.author?.userId,
+                authorHandle = event.author?.handle,
             )
     }
 }

@@ -24,6 +24,13 @@ spring:
 server:
   port: ${SERVER_PORT:8083}
 
+moderation:
+  warning-threshold: ${MODERATION_WARNING_THRESHOLD:3}
+  ban-threshold: ${MODERATION_BAN_THRESHOLD:6}
+  ban-ladder: ${MODERATION_BAN_LADDER:1m,5m,30m,2h,12h,24h}
+  escalation-window: ${MODERATION_ESCALATION_WINDOW:1d}
+  technical-dlt-counts-as-strike: ${MODERATION_TECHNICAL_DLT_COUNTS_AS_STRIKE:true}
+
 management:
   endpoints:
     web:
