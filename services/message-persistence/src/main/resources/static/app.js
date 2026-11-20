@@ -13,6 +13,8 @@
     logRows: [],
     banTimer: null,
     banUntil: 0,
+    tokenTimer: null,
+    renewal: null,
   };
 
   var $ = function (id) { return document.getElementById(id); };
@@ -112,21 +114,28 @@
 
   // ---------- fetch-based SSE ----------
   function startSse(path, withAuth, onEvent, opts) {
-    var stopped = false, delay = 1000, ctrl = null;
+    var stopped = false, delay = 1000, ctrl = null, retried401 = false;
     opts = opts || {};
     async function run() {
       while (!stopped) {
         ctrl = new AbortController();
         try {
-          if (opts.beforeConnect) await opts.beforeConnect();
           var res = await fetch(path, {
             headers: withAuth ? authHeaders({ Accept: 'text/event-stream' }) : { Accept: 'text/event-stream' },
             signal: ctrl.signal, cache: 'no-store',
           });
-          if (res.status === 401 && withAuth) { signOut(); return; }
+          if (res.status === 401 && withAuth) {
+            if (!retried401 && await renewToken()) { retried401 = true; continue; }
+            signOut();
+            return;
+          }
+          if (res.status === 403 && withAuth && opts.onForbidden) { stopped = true; opts.onForbidden(); return; }
           if (!res.ok || !res.body) throw new Error('HTTP ' + res.status);
           delay = 1000;
+          retried401 = false;
           if (opts.onState) opts.onState(true);
+          // stream is open first; load state afterwards so results committed in the gap are not lost
+          if (opts.afterConnect) opts.afterConnect();
           var reader = res.body.getReader(), dec = new TextDecoder(), buf = '', evName = '', data = [];
           for (;;) {
             var r = await reader.read();
@@ -175,9 +184,63 @@
   }
 
   // ---------- auth ----------
+  // The JWT payload is decoded only to time a silent renewal; the server alone decides whether a token is valid.
+  function tokenExpiryMs(t) {
+    try {
+      var p = String(t).split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      while (p.length % 4) p += '=';
+      var exp = JSON.parse(atob(p)).exp;
+      return typeof exp === 'number' ? exp * 1000 : 0;
+    } catch (e) { return 0; }
+  }
+  function scheduleRenewal(t) {
+    if (state.tokenTimer) clearTimeout(state.tokenTimer);
+    state.tokenTimer = null;
+    var exp = t ? tokenExpiryMs(t) : 0;
+    if (!exp) return;
+    var wait = Math.max(0, exp - Date.now() - 5 * 60 * 1000);
+    state.tokenTimer = setTimeout(function () { renewToken(); }, Math.min(wait, 2147483647));
+  }
+  // Asks Google for a fresh credential silently (auto_select). Resolves true if a new token arrived.
+  function renewToken() {
+    if (state.renewal) return state.renewal.promise;
+    if (!(window.google && google.accounts && google.accounts.id)) return Promise.resolve(false);
+    var r = {};
+    r.promise = new Promise(function (resolve) {
+      var done = false;
+      r.finish = function (ok) {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        state.renewal = null;
+        resolve(ok);
+      };
+      var timer = setTimeout(function () { r.finish(false); }, 8000);
+    });
+    state.renewal = r;
+    try {
+      google.accounts.id.prompt(function (n) {
+        if (n && ((n.isNotDisplayed && n.isNotDisplayed()) || (n.isSkippedMoment && n.isSkippedMoment()))) r.finish(false);
+      });
+    } catch (e) { r.finish(false); }
+    return r.promise;
+  }
+  // fetch with auth; on 401 tries one silent renewal and retries once
+  async function authedFetch(path, init) {
+    init = init || {};
+    function go() {
+      return fetch(path, Object.assign({}, init, { headers: authHeaders(init.headers) }));
+    }
+    var res = await go();
+    if (res.status === 401 && state.token) {
+      if (await renewToken()) res = await go();
+    }
+    return res;
+  }
   function setToken(t) {
     state.token = t || null;
     if (t) safeStore('set', TOKEN_KEY, t); else safeStore('del', TOKEN_KEY);
+    scheduleRenewal(state.token);
   }
   function signOut() {
     setToken(null);
@@ -189,12 +252,13 @@
   async function onCredential(resp) {
     if (!resp || !resp.credential) return;
     setToken(resp.credential);
-    await refreshMe();
+    if (state.renewal) state.renewal.finish(true);
+    if (!state.me) await refreshMe();
   }
   async function refreshMe() {
     if (!state.token) return;
     try {
-      var res = await fetch('/api/me', { headers: authHeaders(), cache: 'no-store' });
+      var res = await authedFetch('/api/me', { cache: 'no-store' });
       if (res.status === 401) { signOut(); return; }
       if (!res.ok) throw new Error('HTTP ' + res.status);
       state.me = await res.json();
@@ -277,9 +341,9 @@
     var p = { text: text, el: line };
     var drop = function () { line.remove(); };
     try {
-      var res = await fetch(apiBase() + '/api/messages', {
+      var res = await authedFetch(apiBase() + '/api/messages', {
         method: 'POST',
-        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: text }),
       });
       if (res.status === 202) {
@@ -336,9 +400,9 @@
     }
     els['handle-save'].disabled = true;
     try {
-      var res = await fetch('/api/me/handle', {
+      var res = await authedFetch('/api/me/handle', {
         method: 'PUT',
-        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ handle: handle }),
       });
       if (res.ok) { els['handle-dialog'].close(); await refreshMe(); }
@@ -353,24 +417,32 @@
 
   // ---------- admin ----------
   var stopAdminStream = null;
+  async function loadModerationLog() {
+    try {
+      var res = await authedFetch('/api/admin/moderation-log?limit=200', { cache: 'no-store' });
+      if (res.status === 401) { signOut(); return; }
+      if (res.ok) {
+        var rows = await res.json();
+        rows.slice().reverse().forEach(addModerationRow);
+      }
+    } catch (e) { /* ignore */ }
+  }
   function startAdmin() {
     if (stopAdminStream) return;
     state.logRows = [];
     state.cards.clear();
     els.cards.textContent = '';
     els['log-body'].textContent = '';
-    (async function () {
-      try {
-        var res = await fetch('/api/admin/moderation-log?limit=200', { headers: authHeaders(), cache: 'no-store' });
-        if (res.status === 401) { signOut(); return; }
-        if (res.ok) {
-          var rows = await res.json();
-          rows.slice().reverse().forEach(addModerationRow);
-        }
-      } catch (e) { /* ignore */ }
-    })();
     stopAdminStream = startSse('/api/admin/stream', true, function (name, row) {
       if (name === 'moderation') addModerationRow(row);
+      else if (name === 'resync') loadModerationLog();
+    }, {
+      afterConnect: loadModerationLog,
+      onForbidden: function () {
+        // 403 is final: not an admin (anymore); stop retrying and hide the admin UI
+        if (state.me) state.me.isAdmin = false;
+        renderMe();
+      },
     });
   }
   function stopAdmin() {
@@ -433,7 +505,7 @@
   els['audit-btn'].addEventListener('click', async function () {
     els.audit.textContent = '';
     try {
-      var res = await fetch('/api/audit-logs', { headers: authHeaders(), cache: 'no-store' });
+      var res = await authedFetch('/api/audit-logs', { cache: 'no-store' });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       var list = await res.json();
       list.slice(0, 30).forEach(function (a) {
@@ -466,7 +538,9 @@
     }
     try {
       await loadGis();
-      google.accounts.id.initialize({ client_id: state.config.googleClientId, callback: onCredential });
+      google.accounts.id.initialize({
+        client_id: state.config.googleClientId, callback: onCredential, auto_select: true,
+      });
       google.accounts.id.renderButton(els['gsi-button'], { theme: 'outline', size: 'medium', type: 'standard' });
     } catch (e) {
       els.setup.textContent = 'Could not load Google sign-in.';
@@ -482,11 +556,12 @@
       if (res.ok) state.config = await res.json();
     } catch (e) { /* use defaults */ }
 
-    // public stream; re-fetch history on every (re)connect, dedupe by messageId
+    // public stream; after every (re)connect (and on resync) re-fetch history, dedupe by messageId
     startSse('/api/chat/stream', false, function (name, ev) {
       if (name === 'message' || name === 'removed') handleChatEvent(name, ev);
+      else if (name === 'resync') loadHistory();
     }, {
-      beforeConnect: loadHistory,
+      afterConnect: loadHistory,
       onState: function (on) {
         els.conn.textContent = on ? 'live' : 'reconnecting…';
         els.conn.classList.toggle('on', on);
@@ -494,9 +569,9 @@
     });
 
     var saved = safeStore('get', TOKEN_KEY);
-    if (saved) { state.token = saved; await refreshMe(); }
+    await initAuth(); // GIS must be ready before any 401 can trigger a silent renewal
+    if (saved) { setToken(saved); await refreshMe(); }
     renderMe();
-    initAuth();
   }
   boot();
 })();

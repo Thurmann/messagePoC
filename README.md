@@ -54,7 +54,8 @@ automatically.
 
 ## Live chat
 
-Open <http://localhost:8083>, sign in with Google, and choose a handle. The
+Open <http://localhost:8083> (not `127.0.0.1`: CORS and Google's authorized
+JavaScript origins are exact matches), sign in with Google, and choose a handle. The
 handle is chosen once, is unique (case-insensitive), and cannot be changed later.
 Messages from other users appear live over Server-Sent Events. Each message is
 moderated before it is shown to everyone:
@@ -66,6 +67,11 @@ moderated before it is shown to everyone:
 3. `message-persistence` stores the result and updates your strike count. The
    chat shows the message to everyone, or shows "A message from <handle> was
    removed by moderation." if it was rejected.
+
+> **Important:** `MODERATION_TECHNICAL_DLT_COUNTS_AS_STRIKE` defaults to `true`.
+> If `TYPESAFE_API_KEY` is missing or Jev is down, every message goes to the DLT
+> and counts as a strike, so users are banned after 6 messages. Set
+> `MODERATION_TECHNICAL_DLT_COUNTS_AS_STRIKE=false` to avoid that.
 
 Strikes and bans:
 
@@ -83,8 +89,8 @@ Strikes and bans:
   ban ends.
 
 Admins (addresses in `ADMIN_EMAILS`, or added to the `admin_user` table) see an
-admin rail with the moderation log, which lists every result, its score, its
-strike state, and the current ban state. The log is also streamed live.
+admin rail with the moderation log, which lists rejected and DLT results (not validated ones), with
+score, strike state, and the current ban state. The log is also streamed live.
 
 ### Get a Google client ID locally
 
@@ -114,7 +120,7 @@ Defaults apply when a variable is unset.
 | `MODERATION_BAN_THRESHOLD` | message-persistence | `6` | Strikes that trigger a ban |
 | `MODERATION_BAN_LADDER` | message-persistence | `1m,5m,30m,2h,12h,24h` | Ban durations by step; the last step repeats |
 | `MODERATION_ESCALATION_WINDOW` | message-persistence | `1d` | Window after a ban in which the next ban escalates |
-| `MODERATION_TECHNICAL_DLT_COUNTS_AS_STRIKE` | message-persistence | `true` | Whether technical DLT failures count as strikes |
+| `MODERATION_TECHNICAL_DLT_COUNTS_AS_STRIKE` | message-persistence | `true` | Whether technical DLT failures count as strikes. **Warning:** with a missing `TYPESAFE_API_KEY` or Jev down every message ends in the DLT and counts, banning users after 6 messages; set `false` to avoid that |
 
 `message-api` also uses the database variables `DB_HOST`, `DB_PORT`, `DB_NAME`,
 `DB_USER`, `DB_PASSWORD`, and `JDBC_URL`, the same as `message-persistence`. It
@@ -138,7 +144,14 @@ reads the handle and ban state from that database.
 ## Send messages from the command line
 
 The helper script posts as a signed-in user, so it needs a Google ID token. Sign
-in at <http://localhost:8083>, copy an ID token for your account, and export it:
+in at <http://localhost:8083> (use `localhost`, not `127.0.0.1`), open the browser
+DevTools console, and copy the token the page keeps in session storage:
+
+```js
+sessionStorage.getItem("idToken")
+```
+
+Then export it:
 
 ```bash
 export ID_TOKEN=eyJ...

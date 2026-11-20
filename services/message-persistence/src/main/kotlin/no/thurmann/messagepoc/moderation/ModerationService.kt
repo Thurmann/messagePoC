@@ -24,10 +24,14 @@ class ModerationService(
 
     @Transactional
     fun record(result: MessageResult) {
+        val authorId = result.authorId
+        val knownAuthor = authorId != null && lockUser(authorId)
+        // Serialise redeliveries of the same event, then skip duplicates only after the user lock is held,
+        // so a redelivered event is never counted twice and never overwrites an existing row.
+        jdbcTemplate.query("SELECT pg_advisory_xact_lock(hashtext(?))", RowCallbackHandler { }, result.eventId.toString())
         if (messageResultRepository.existsById(result.eventId)) return
 
-        val authorId = result.authorId
-        if (authorId != null && lockUser(authorId)) {
+        if (authorId != null && knownAuthor) {
             val strike = policy.countsAsStrike(result.status, result.profanityScore)
             val previousBan = userBanRepository.findFirstByUserIdOrderByEndsAtDesc(authorId)?.toPreviousBan()
             result.strike = strike
