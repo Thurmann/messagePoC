@@ -35,6 +35,11 @@ A tag with a suffix, such as `v0.2.0-rc.1`, becomes a prerelease. Its images are
 tagged only `0.2.0-rc.1` (no `latest`, no `0.2`), and it is not deployed
 automatically. To deploy one anyway, run the Deploy workflow manually.
 
+The workflow refuses a tag that is not on `main`, or whose version is not higher
+than the latest stable release (`v0.1.5` after `v0.3.0`, or `v0.3.0-rc.1` after
+`v0.3.0`), so an old version cannot take over `latest` or be deployed over a newer
+one. To roll back, run the Deploy workflow manually with the older version.
+
 If a release run fails before the GitHub release is created, fix the problem on
 `main`, then tag a new version. Do not move an existing tag.
 
