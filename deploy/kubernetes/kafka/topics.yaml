@@ -6,7 +6,9 @@ metadata:
     strimzi.io/cluster: message-poc
 spec:
   partitions: 3
-  replicas: 1
+  replicas: 3
+  config:
+    min.insync.replicas: "2"
 ---
 apiVersion: kafka.strimzi.io/v1beta2
 kind: KafkaTopic
@@ -16,7 +18,9 @@ metadata:
     strimzi.io/cluster: message-poc
 spec:
   partitions: 3
-  replicas: 1
+  replicas: 3
+  config:
+    min.insync.replicas: "2"
 ---
 apiVersion: kafka.strimzi.io/v1beta2
 kind: KafkaTopic
@@ -26,7 +30,9 @@ metadata:
     strimzi.io/cluster: message-poc
 spec:
   partitions: 3
-  replicas: 1
+  replicas: 3
+  config:
+    min.insync.replicas: "2"
 ---
 apiVersion: kafka.strimzi.io/v1beta2
 kind: KafkaTopic
@@ -36,4 +42,6 @@ metadata:
     strimzi.io/cluster: message-poc
 spec:
   partitions: 3
-  replicas: 1
+  replicas: 3
+  config:
+    min.insync.replicas: "2"

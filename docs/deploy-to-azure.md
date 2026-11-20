@@ -42,7 +42,7 @@ first deployment as a learning run and check each step's output.
 
 - An Azure subscription where you can create resource groups, AKS, ACR,
   PostgreSQL, and (for the appendix only) Event Hubs. Check that the region has
-  quota for two `Standard_D2s_v5` nodes.
+  quota for three `Standard_D2s_v5` nodes.
 - Azure CLI (`az`), `kubectl`, and Helm 3. `psql` is needed for the database
   step, and Docker is optional (the guide uses `az acr build`).
 - A clone of this repository, with the current directory set to its root.
@@ -128,11 +128,12 @@ image when you push again under the same tag.
 
 Create the cluster with ACR attached (so nodes can pull the images without
 pull secrets) and the application routing add-on enabled (managed NGINX
-ingress). Choose the node SKU that your quota allows.
+ingress). Choose the node SKU that your quota allows. Use at least 3 nodes so
+the pod anti-affinity can place one Kafka broker per node.
 
 ```bash
 az aks create -g "$RESOURCE_GROUP" -n "$AKS_NAME" -l "$LOCATION" \
-  --node-count 2 \
+  --node-count 3 \
   --node-vm-size Standard_D2s_v5 \
   --generate-ssh-keys \
   --attach-acr "$ACR_NAME" \
@@ -217,9 +218,11 @@ only three topics, and `scripts/reset-local.sh` lists stale topic names, so
 do not copy those lists.
 
 Kafka runs inside the cluster through [Strimzi](https://strimzi.io): a
-single-node KRaft broker with a 10Gi persistent volume, the closest match to the
-`apache/kafka` service in `compose.yaml`. You operate the broker yourself, so it
-is not production-grade. The cluster and the topics are defined in
+three-node KRaft cluster (combined controller and broker roles) with a 10Gi
+persistent volume per node, so 3 PVCs. Topics use replication factor 3 and
+`min.insync.replicas` 2, which lets writes (the services use `acks=all`)
+continue with one broker down and survive rolling restarts. You operate the
+brokers yourself, so it is not production-grade. The cluster and the topics are defined in
 `deploy/kubernetes/kafka` and are applied together with the overlay in step 10.
 Here you install only the operator, once per cluster:
 
@@ -660,9 +663,9 @@ the text, not the thresholds.
 
 ## 14. Costs and cleanup
 
-The main costs are the two AKS nodes, the PostgreSQL server, and the Azure
+The main costs are the three AKS nodes, the PostgreSQL server, and the Azure
 public IP and load balancer.
-ACR Basic and the Strimzi PVCs also cost something. Check the current prices in
+ACR Basic and the three Strimzi PVCs also cost something. Check the current prices in
 the Azure pricing calculator for your region.
 
 To pause the work without deleting data, stop the cluster and the database:

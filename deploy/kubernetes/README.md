@@ -13,8 +13,8 @@ clusters with managed Kafka can skip it. An example overlay is in
 The base ConfigMap points at `message-poc-kafka-bootstrap:9092` with
 `PLAINTEXT`, the bootstrap service of a Strimzi `Kafka` cluster named
 `message-poc` in the same namespace. The `kafka/` kustomization defines that
-cluster (single-node KRaft, 10Gi volume) and the four topics (3 partitions,
-1 replica). Install the operator once per cluster, then apply `kafka/` (or an
+cluster (3 combined controller+broker KRaft nodes, one 10Gi volume each, so 3 PVCs)
+and the four topics (3 partitions, replication factor 3, min ISR 2). Install the operator once per cluster, then apply `kafka/` (or an
 overlay that includes it):
 
 ```sh
@@ -25,7 +25,11 @@ kubectl apply -k deploy/kubernetes/kafka -n <namespace>
 ```
 
 The `version` in `kafka/kafka.yaml` must be supported by the installed operator
-release. This is a single-broker setup, not highly available.
+release. The cluster runs 3 brokers with replication factor 3 and
+`min.insync.replicas` 2. The services produce with `acks=all`, so min ISR 2
+lets writes continue with one broker down and through rolling restarts (min ISR
+3 would block writes whenever any broker is down). Pod anti-affinity is
+preferred, so use at least 3 nodes to get one broker per node.
 
 ### Alternative: managed Kafka (Event Hubs, Confluent, ...)
 
