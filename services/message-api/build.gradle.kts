@@ -33,5 +33,19 @@ dependencies {
     testImplementation("org.springframework.boot:spring-boot-starter-kafka-test")
     testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
+    testImplementation("org.springframework.boot:spring-boot-starter-security-test")
+    testImplementation("org.springframework.boot:spring-boot-testcontainers")
+    testImplementation("org.testcontainers:testcontainers-postgresql")
+    testImplementation("org.testcontainers:testcontainers-junit-jupiter")
+    testImplementation("org.flywaydb:flyway-core")
+    testImplementation("org.flywaydb:flyway-database-postgresql")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+}
+
+// message-persistence owns the schema; message-api tests migrate with its files as the source of truth.
+tasks.withType<Test> {
+    systemProperty(
+        "persistence.migration.dir",
+        project(":services:message-persistence").projectDir.resolve("src/main/resources/db/migration").absolutePath,
+    )
 }

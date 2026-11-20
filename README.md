@@ -350,6 +350,15 @@ not part of the test.
 ./gradlew build
 ```
 
+The integration tests (`*IT` classes in `message-persistence` and `message-api`)
+start a throwaway PostgreSQL 17 container with Testcontainers, so Docker must be
+running for them to execute. Without Docker they are skipped, and only the unit
+tests run. They cover the Flyway migrations, strikes, warnings and escalating
+bans (including concurrent and redelivered events), LISTEN/NOTIFY fan-out, the
+security rules for public, signed-in and admin endpoints, and `message-api`'s
+posting checks and CORS. They never connect to the Compose Kafka or PostgreSQL,
+so they can run while the local stack is up.
+
 ## Stop
 
 Keep data:
