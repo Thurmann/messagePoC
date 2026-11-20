@@ -41,5 +41,7 @@ open class UserBan(
 )
 
 interface UserBanRepository : JpaRepository<UserBan, Long> {
+    fun findFirstByUserIdAndEndsAtAfterOrderByEndsAtDesc(userId: String, now: Instant): UserBan?
+
     fun findFirstByUserIdOrderByEndsAtDesc(userId: String): UserBan?
 }
