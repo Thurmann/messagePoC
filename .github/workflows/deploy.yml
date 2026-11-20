@@ -1,0 +1,110 @@
+name: Deploy
+
+# Deploys a released version to AKS: imports its GHCR images into ACR, renders deploy/azure from the
+# release tag with those images, and applies it. Setup is described in docs/ci-cd.md.
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Released version without the v prefix, for example 0.2.0
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Released version without the v prefix, for example 0.2.0
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+  packages: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy ${{ inputs.version }} to AKS
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    env:
+      VERSION: ${{ inputs.version }}
+      NAMESPACE: message-poc
+      SERVICES: message-api validation-service message-persistence message-audit
+    steps:
+      - name: Check inputs and configuration
+        env:
+          AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          AKS_NAME: ${{ vars.AKS_NAME }}
+          ACR_NAME: ${{ vars.ACR_NAME }}
+        run: |
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Version $VERSION is not a semantic version such as 1.2.3"
+            exit 1
+          fi
+          missing=0
+          for name in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_RESOURCE_GROUP AKS_NAME ACR_NAME; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Set the $name variable on the production environment"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      # Deploy the manifests from the release tag, not from the branch the workflow was started on.
+      - uses: actions/checkout@v7
+        with:
+          ref: v${{ inputs.version }}
+
+      - uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - uses: azure/setup-kubectl@v5
+
+      - name: Import images into ACR
+        env:
+          ACR_NAME: ${{ vars.ACR_NAME }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          for svc in $SERVICES; do
+            az acr import --name "$ACR_NAME" --force \
+              --source "ghcr.io/${owner}/message-poc/${svc}:${VERSION}" \
+              --image "message-poc/${svc}:${VERSION}" \
+              --username "$GITHUB_ACTOR" --password "$GHCR_TOKEN"
+          done
+
+      - name: Render manifests
+        env:
+          ACR_NAME: ${{ vars.ACR_NAME }}
+        run: |
+          login_server=$(az acr show --name "$ACR_NAME" --query loginServer --output tsv)
+          kubectl kustomize deploy/azure \
+            | sed -E "s#^([[:space:]]*image:[[:space:]]*).*/message-poc/(message-api|validation-service|message-persistence|message-audit):.*#\1${login_server}/message-poc/\2:${VERSION}#" \
+            > "$RUNNER_TEMP/manifests.yaml"
+          grep -E '^[[:space:]]*image:' "$RUNNER_TEMP/manifests.yaml"
+          if grep -nE '<[a-z][a-z0-9-]*>' "$RUNNER_TEMP/manifests.yaml"; then
+            echo "::error::deploy/azure still has <...> placeholders at v${VERSION}; fill them in (docs/deploy-to-azure.md step 9) and release again"
+            exit 1
+          fi
+
+      - name: Apply
+        env:
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          AKS_NAME: ${{ vars.AKS_NAME }}
+        run: |
+          az aks get-credentials --resource-group "$AZURE_RESOURCE_GROUP" --name "$AKS_NAME" --overwrite-existing
+          kubectl apply -f "$RUNNER_TEMP/manifests.yaml"
+          for svc in $SERVICES; do
+            kubectl -n "$NAMESPACE" rollout status "deployment/${svc}" --timeout=5m
+          done
