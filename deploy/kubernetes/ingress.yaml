@@ -2,6 +2,16 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: message-poc
+  annotations:
+    # The live chat uses Server-Sent Events on /api/chat/stream and /api/admin/stream.
+    # Keep idle connections open. The services send a heartbeat every 15 seconds and
+    # the browser reconnects automatically if a connection is dropped.
+    # Other ingress controllers need their equivalent idle/request timeout setting
+    # (for example, Azure Application Gateway Ingress Controller:
+    # appgw.ingress.kubernetes.io/request-timeout, which defaults to 30 seconds).
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
 spec:
   tls:
     - hosts:
@@ -12,6 +22,15 @@ spec:
     - host: messages.example.com
       http:
         paths:
+          # Exact match: only the POST endpoint goes to message-api. The old
+          # GET /api/messages is now /api/chat/history on message-persistence.
+          - path: /api/messages
+            pathType: Exact
+            backend:
+              service:
+                name: message-api
+                port:
+                  number: 8080
           - path: /
             pathType: Prefix
             backend:
