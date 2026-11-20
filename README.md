@@ -7,7 +7,7 @@ local logging with Grafana Alloy, Loki, and Grafana.
 
 ## Prerequisites
 
-- Java 21
+- Java 25
 - Docker with Docker Compose
 - A Google OAuth client ID for sign-in (see [Get a Google client ID](#get-a-google-client-id-locally))
 
