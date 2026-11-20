@@ -2,13 +2,14 @@
 
 Kotlin/Spring Boot PoC for Kafka application development. The project contains
 four services, shared event contracts, Kafka, PostgreSQL-backed message
-results, Kafbat UI, and centralized local logging with Grafana Alloy, Loki, and
-Grafana.
+results, a Google sign-in live chat with moderation, Kafbat UI, and centralized
+local logging with Grafana Alloy, Loki, and Grafana.
 
 ## Prerequisites
 
 - Java 21
 - Docker with Docker Compose
+- A Google OAuth client ID for sign-in (see [Get a Google client ID](#get-a-google-client-id-locally))
 
 The project uses its own Gradle Wrapper; no global Gradle installation is
 required.
@@ -19,7 +20,7 @@ Set a TypeSafe API key before starting the validation service:
 
 ```bash
 cp .env.example .env
-# Edit .env and set TYPESAFE_API_KEY
+# Edit .env and set TYPESAFE_API_KEY and GOOGLE_CLIENT_ID
 ```
 
 ```bash
@@ -34,7 +35,7 @@ to receive traffic on port 8080. This is useful when deliberately testing
 rebalancing, but confusing as the default development mode.
 
 Kafka is available at `localhost:9092`, PostgreSQL at `localhost:5432`, and
-the API at `localhost:8080`. The message inbox is served by
+the message API at `localhost:8080`. The live chat is served by
 `message-persistence` at <http://localhost:8083>.
 
 Local tools:
@@ -42,7 +43,7 @@ Local tools:
 | Tool | URL | Purpose |
 | --- | --- | --- |
 | Kafbat UI | <http://localhost:8085> | Inspect Kafka topics, records, and consumer groups |
-| Message inbox | <http://localhost:8083> | Compare database results with recent `message-audit` logs |
+| Live chat | <http://localhost:8083> | Sign in with Google, pick a handle, chat, and (for admins) watch the moderation log |
 | Grafana | <http://localhost:3000> | Search logs from all application instances |
 | Alloy UI | <http://localhost:12345> | Inspect the local log collection pipeline |
 | Loki readiness | <http://localhost:3100/ready> | Check whether the log store is ready |
@@ -51,20 +52,109 @@ The Grafana instance is bound to localhost and allows anonymous local access,
 including Explore for log queries. The Loki data source is provisioned
 automatically.
 
-## Send messages
+## Live chat
 
-Send a message using the helper script:
+Open <http://localhost:8083>, sign in with Google, and choose a handle. The
+handle is chosen once, is unique (case-insensitive), and cannot be changed later.
+Messages from other users appear live over Server-Sent Events. Each message is
+moderated before it is shown to everyone:
+
+1. The message is posted to `message-api`, which checks your handle and any
+   active ban, then publishes it to Kafka.
+2. `validation-service` scores the text with Jev (see below) and publishes a
+   validated or rejected result.
+3. `message-persistence` stores the result and updates your strike count. The
+   chat shows the message to everyone, or shows "A message from <handle> was
+   removed by moderation." if it was rejected.
+
+Strikes and bans:
+
+- A rejected message, or a message whose score sends it to the DLT, is one strike.
+  A technical failure that ends in the DLT is also a strike unless
+  `MODERATION_TECHNICAL_DLT_COUNTS_AS_STRIKE=false`.
+- At 3 strikes (`MODERATION_WARNING_THRESHOLD`) you get a warning.
+- At 6 strikes (`MODERATION_BAN_THRESHOLD`) you are banned temporarily. The ban
+  lengths follow `MODERATION_BAN_LADDER`, which defaults to 1 minute, 5 minutes,
+  30 minutes, 2 hours, 12 hours, and 24 hours. The last step repeats.
+- A new ban starts the next step on the ladder if it starts within
+  `MODERATION_ESCALATION_WINDOW` (default `1d`) after the previous ban ended.
+  Otherwise it starts at the first step again.
+- Strikes count from the end of your latest ban, so the counter resets when a
+  ban ends.
+
+Admins (addresses in `ADMIN_EMAILS`, or added to the `admin_user` table) see an
+admin rail with the moderation log, which lists every result, its score, its
+strike state, and the current ban state. The log is also streamed live.
+
+### Get a Google client ID locally
+
+1. In Google Cloud Console, open APIs & Services → Credentials, and choose
+   Create credentials → OAuth client ID.
+2. Choose application type **Web application**.
+3. Under Authorized JavaScript origins, add `http://localhost:8083` and, for the
+   deployed frontend, `https://messages.example.com`.
+4. Copy the client ID into `GOOGLE_CLIENT_ID` in `.env`, then run
+   `docker compose up -d --build`.
+
+The client ID is public, so it is safe to commit in deployment config. Only the
+Compose `.env` file is local.
+
+### Configuration
+
+Set these variables in `.env` (Compose) or in `configmap.yaml` (Kubernetes).
+Defaults apply when a variable is unset.
+
+| Variable | Used by | Default | Purpose |
+| --- | --- | --- | --- |
+| `GOOGLE_CLIENT_ID` | message-api, message-persistence | empty (all tokens rejected) | OAuth Web client ID; ID token audience |
+| `CORS_ALLOWED_ORIGINS` | message-api | `http://localhost:8083` (Compose); empty (Kubernetes) | Browser origins allowed to call `POST /api/messages` |
+| `ADMIN_EMAILS` | message-persistence | `christian.thurmann@gmail.com` | Comma-separated admin emails; inserted into `admin_user` at startup |
+| `MESSAGE_API_BASE_URL` | message-persistence | empty (same origin); `http://localhost:8080` (Compose) | Message API base URL sent to the frontend by `/api/config` |
+| `MODERATION_WARNING_THRESHOLD` | message-persistence | `3` | Strikes that trigger a warning |
+| `MODERATION_BAN_THRESHOLD` | message-persistence | `6` | Strikes that trigger a ban |
+| `MODERATION_BAN_LADDER` | message-persistence | `1m,5m,30m,2h,12h,24h` | Ban durations by step; the last step repeats |
+| `MODERATION_ESCALATION_WINDOW` | message-persistence | `1d` | Window after a ban in which the next ban escalates |
+| `MODERATION_TECHNICAL_DLT_COUNTS_AS_STRIKE` | message-persistence | `true` | Whether technical DLT failures count as strikes |
+
+`message-api` also uses the database variables `DB_HOST`, `DB_PORT`, `DB_NAME`,
+`DB_USER`, `DB_PASSWORD`, and `JDBC_URL`, the same as `message-persistence`. It
+reads the handle and ban state from that database.
+
+### Endpoints
+
+| Service | Endpoint | Auth | Purpose |
+| --- | --- | --- | --- |
+| message-api | `POST /api/messages` | Bearer ID token | Submit a message; returns `202` with `messageId`. Errors: `401`, `403` (`BANNED`, with `bannedUntil`), `409` (handle required), `503` (database unreachable) |
+| message-persistence | `GET /api/config` | public | Client ID and message API base URL for the frontend |
+| message-persistence | `GET /api/chat/history?limit=100` | public | Recent public messages and removed placeholders (never rejected text) |
+| message-persistence | `GET /api/chat/stream` | public | Live `message` and `removed` events (SSE) |
+| message-persistence | `GET /api/me` | Bearer ID token | Your handle, strikes, warning and ban state; creates your user record |
+| message-persistence | `PUT /api/me/handle` | Bearer ID token | Choose your handle once (`^[A-Za-z0-9_]{3,20}$`) |
+| message-persistence | `GET /api/admin/moderation-log?limit=200` | admin | Moderation log |
+| message-persistence | `GET /api/admin/stream` | admin | Live moderation rows (SSE) |
+| message-persistence | `GET /api/audit-logs` | admin | Recent `message-audit` entries from Loki |
+| all services | `GET /actuator/health` | public | Health probes |
+
+## Send messages from the command line
+
+The helper script posts as a signed-in user, so it needs a Google ID token. Sign
+in at <http://localhost:8083>, copy an ID token for your account, and export it:
 
 ```bash
-./sendmessage.sh "some text to be shown in the frontend"
+export ID_TOKEN=eyJ...
+./sendmessage.sh "some text to be shown in the chat"
 ```
 
-It posts to `http://localhost:8080/api/messages`. Set `MESSAGE_API_URL` to use a
-different API address. The inbox refreshes every five seconds; messages appear
-after the Kafka validation and persistence steps finish.
+The token expires after about an hour, and it must have been issued for the
+`GOOGLE_CLIENT_ID` the services use. The script posts to
+`http://localhost:8080/api/messages` with `Authorization: Bearer $ID_TOKEN`. Set
+`MESSAGE_API_URL` to use a different API address. The chat updates live over
+Server-Sent Events. Messages appear after the Kafka validation and persistence
+steps finish.
 
-The database-backed JSON endpoint is also available at
-`http://localhost:8083/api/messages`.
+The database-backed history is available at
+`http://localhost:8083/api/chat/history`. It replaces the former
+`/api/messages` GET endpoint.
 The adjacent audit panel reads the 50 newest result entries from `message-audit`
 through Loki at `http://localhost:8083/api/audit-logs`.
 
@@ -82,6 +172,7 @@ Accepted example:
 ```bash
 curl -i -X POST http://localhost:8080/api/messages \
   -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $ID_TOKEN" \
   -d '{"text":"Thanks for your help with this order."}'
 ```
 
@@ -90,11 +181,12 @@ Rejected example (Jev's assessment can vary by model version):
 ```bash
 curl -i -X POST http://localhost:8080/api/messages \
   -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $ID_TOKEN" \
   -d '{"text":"You are a disgusting idiot, get lost."}'
 ```
 
 The API returns `202 Accepted`. The final `VALIDATED` or `REJECTED` result is
-visible in the application logs in Grafana and as an event in Kafbat UI. The
+shown in the chat and is visible in the application logs in Grafana and as an event in Kafbat UI. The
 validation service needs `TYPESAFE_API_KEY`; if Jev is unavailable, Kafka's
 listener retry handler sends the failed record to the DLT after its retries.
 
@@ -111,8 +203,10 @@ the technical-failure path locally:
 
 This reserved text deliberately makes the validation listener throw an
 exception. Inspect the DLT in Kafbat UI at <http://localhost:8085>. The message
-is sent through the API successfully, but it is not written to the normal
-results topic or the message inbox.
+is sent through the API successfully, but it is not shown in the public chat.
+`message-persistence` consumes the DLT event, stores it as a `DLT` row, and shows
+it in the admin moderation log. It counts as a strike unless
+`MODERATION_TECHNICAL_DLT_COUNTS_AS_STRIKE=false`.
 
 ## Deployment
 
@@ -121,7 +215,10 @@ platforms. The portable manifests and instructions are in
 [`deploy/kubernetes`](deploy/kubernetes/README.md). They expect managed or
 platform-provided Kafka, PostgreSQL, and Loki; no cloud-specific stateful
 services are bundled into the application deployment. Set `TYPESAFE_API_KEY`
-through the platform's secret manager.
+through the platform's secret manager. `GOOGLE_CLIENT_ID` is public and goes in
+the ConfigMap. See [`deploy/kubernetes/README.md`](deploy/kubernetes/README.md)
+for the Google client setup, admins, moderation parameters, SSE and ingress
+timeouts, and the direct-connection requirement for LISTEN/NOTIFY.
 
 Vercel can manage DNS for a domain whose runtime is hosted elsewhere. Point the
 chosen subdomain CNAME at the hostname supplied by the cluster ingress/load

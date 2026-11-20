@@ -1,5 +1,11 @@
 name: message-poc
 
+x-application-environment: &application-environment
+  KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+  DEPLOYMENT_ENVIRONMENT: local
+  LOGGING_STRUCTURED_FORMAT_CONSOLE: logstash
+  SPRING_MAIN_BANNER_MODE: "off"
+
 services:
   kafka:
     image: apache/kafka:4.3.1
@@ -77,16 +83,18 @@ services:
     init: true
     ports:
       - "8080:8080"
-    environment: &application-environment
-      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-      DEPLOYMENT_ENVIRONMENT: local
-      LOGGING_STRUCTURED_FORMAT_CONSOLE: logstash
-      SPRING_MAIN_BANNER_MODE: "off"
+    environment:
+      <<: *application-environment
+      DB_HOST: postgres
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      CORS_ALLOWED_ORIGINS: http://localhost:8083
     depends_on:
       kafka:
         condition: service_healthy
       kafka-init:
         condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
     logging: &application-logging
       driver: json-file
       options:
@@ -124,6 +132,14 @@ services:
       <<: *application-environment
       DB_HOST: postgres
       LOKI_URL: http://loki:3100
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-christian.thurmann@gmail.com}
+      MESSAGE_API_BASE_URL: http://localhost:8080
+      MODERATION_WARNING_THRESHOLD: ${MODERATION_WARNING_THRESHOLD:-3}
+      MODERATION_BAN_THRESHOLD: ${MODERATION_BAN_THRESHOLD:-6}
+      MODERATION_BAN_LADDER: ${MODERATION_BAN_LADDER:-1m,5m,30m,2h,12h,24h}
+      MODERATION_ESCALATION_WINDOW: ${MODERATION_ESCALATION_WINDOW:-1d}
+      MODERATION_TECHNICAL_DLT_COUNTS_AS_STRIKE: ${MODERATION_TECHNICAL_DLT_COUNTS_AS_STRIKE:-true}
     depends_on:
       kafka:
         condition: service_healthy

@@ -23,6 +23,11 @@ spec:
             - configMapRef:
                 name: message-poc-config
           env:
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: message-poc-secrets
+                  key: DB_PASSWORD
             - name: SPRING_KAFKA_PROPERTIES_SASL_JAAS_CONFIG
               valueFrom:
                 secretKeyRef:

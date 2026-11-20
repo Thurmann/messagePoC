@@ -14,4 +14,16 @@ data:
   TYPESAFE_API_URL: https://api.typesafe.ai/v1/systemone
   MODERATION_REJECT_THRESHOLD: "0.7"
   MODERATION_DLT_THRESHOLD: "0.95"
+  # Public OAuth client ID (not a secret). Create it in Google Cloud Console; see README.
+  GOOGLE_CLIENT_ID: "REPLACE_WITH_GOOGLE_OAUTH_CLIENT_ID.apps.googleusercontent.com"
+  ADMIN_EMAILS: christian.thurmann@gmail.com
+  # Empty = the frontend calls the API on the same origin through the Ingress.
+  MESSAGE_API_BASE_URL: ""
+  # Empty = no cross-origin callers; the same-origin setup needs no CORS.
+  CORS_ALLOWED_ORIGINS: ""
+  MODERATION_WARNING_THRESHOLD: "3"
+  MODERATION_BAN_THRESHOLD: "6"
+  MODERATION_BAN_LADDER: "1m,5m,30m,2h,12h,24h"
+  MODERATION_ESCALATION_WINDOW: "1d"
+  MODERATION_TECHNICAL_DLT_COUNTS_AS_STRIKE: "true"
   JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=70
