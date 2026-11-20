@@ -9,6 +9,7 @@ RESET_DATABASE=false
 ASSUME_YES=false
 RESTART_SERVICES=true
 PARTITIONS=3
+BOOTSTRAP_SERVERS="kafka-1:29092,kafka-2:29092,kafka-3:29092"
 
 TOPICS=(
   "poc.messages.submitted.v1"
@@ -86,7 +87,7 @@ cd "$PROJECT_DIR"
 printf 'This will permanently delete local records from:\n'
 printf '  - Kafka topics: %s\n' "${TOPICS[*]}"
 printf '  - Consumer groups: %s\n' "${CONSUMER_GROUPS[*]}"
-printf 'The topics will be recreated with %s partition(s).\n' "$PARTITIONS"
+printf 'The topics will be recreated with %s partition(s), replication factor 3 and min.insync.replicas 2.\n' "$PARTITIONS"
 if "$RESET_DATABASE"; then
   printf '  - PostgreSQL schema: public (database message_poc)\n'
 fi
@@ -104,15 +105,15 @@ printf '\nStopping Compose application services...\n'
 docker compose stop message-api validation-service message-persistence message-audit
 
 printf 'Starting required infrastructure...\n'
-docker compose up -d --wait kafka postgres
+docker compose up -d --wait kafka-1 kafka-2 kafka-3 postgres
 
 active_member_count() {
   local group="$1"
   local output
   output="$(
-    docker compose exec -T kafka \
+    docker compose exec -T kafka-1 \
       /opt/kafka/bin/kafka-consumer-groups.sh \
-      --bootstrap-server kafka:29092 \
+      --bootstrap-server "$BOOTSTRAP_SERVERS" \
       --describe \
       --group "$group" \
       --members \
@@ -125,9 +126,9 @@ printf 'Checking that Kafka consumer groups have no running members...\n'
 for group in "${CONSUMER_GROUPS[@]}"; do
   members="$(active_member_count "$group")"
   if ((members > 0)); then
-    docker compose exec -T kafka \
+    docker compose exec -T kafka-1 \
       /opt/kafka/bin/kafka-consumer-groups.sh \
-      --bootstrap-server kafka:29092 \
+      --bootstrap-server "$BOOTSTRAP_SERVERS" \
       --describe \
       --group "$group" \
       --members \
@@ -144,9 +145,9 @@ fi
 printf 'Deleting consumer groups...\n'
 for group in "${CONSUMER_GROUPS[@]}"; do
   delete_output="$(
-    docker compose exec -T kafka \
+    docker compose exec -T kafka-1 \
       /opt/kafka/bin/kafka-consumer-groups.sh \
-      --bootstrap-server kafka:29092 \
+      --bootstrap-server "$BOOTSTRAP_SERVERS" \
       --delete \
       --group "$group" 2>&1
   )" || {
@@ -160,9 +161,9 @@ done
 
 printf 'Deleting Kafka topics...\n'
 for topic in "${TOPICS[@]}"; do
-  docker compose exec -T kafka \
+  docker compose exec -T kafka-1 \
     /opt/kafka/bin/kafka-topics.sh \
-    --bootstrap-server kafka:29092 \
+    --bootstrap-server "$BOOTSTRAP_SERVERS" \
     --delete \
     --if-exists \
     --topic "$topic"
@@ -171,9 +172,9 @@ done
 for attempt in {1..30}; do
   remaining=0
   for topic in "${TOPICS[@]}"; do
-    if docker compose exec -T kafka \
+    if docker compose exec -T kafka-1 \
       /opt/kafka/bin/kafka-topics.sh \
-      --bootstrap-server kafka:29092 \
+      --bootstrap-server "$BOOTSTRAP_SERVERS" \
       --describe \
       --topic "$topic" >/dev/null 2>&1; then
       remaining=$((remaining + 1))
@@ -186,13 +187,14 @@ done
 
 printf 'Recreating Kafka topics with %s partition(s)...\n' "$PARTITIONS"
 for topic in "${TOPICS[@]}"; do
-  docker compose exec -T kafka \
+  docker compose exec -T kafka-1 \
     /opt/kafka/bin/kafka-topics.sh \
-    --bootstrap-server kafka:29092 \
+    --bootstrap-server "$BOOTSTRAP_SERVERS" \
     --create \
     --topic "$topic" \
     --partitions "$PARTITIONS" \
-    --replication-factor 1
+    --replication-factor 3 \
+    --config min.insync.replicas=2
 done
 
 if "$RESET_DATABASE"; then

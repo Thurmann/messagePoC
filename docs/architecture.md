@@ -62,6 +62,11 @@ labels. Per-message values such as `correlationId`, `messageId`, `eventId`,
 Kafka partition, and offset are JSON fields parsed at query time. This avoids
 creating an unbounded number of Loki streams.
 
+Locally, Kafka is a three-broker KRaft cluster (host ports 9092, 9094, 9096)
+with replication factor 3 and `min.insync.replicas=2`, so producing with
+`acks=all` and consuming continue when one broker is down. Services use all
+three brokers as bootstrap servers.
+
 Kafka remains the event record and Loki is the diagnostic record. A consumed
 Kafka event is not deleted by log retention or by a consumer committing its
 offset.
