@@ -13,9 +13,8 @@ PARTITIONS=3
 TOPICS=(
   "poc.messages.submitted.v1"
   "poc.messages.results.v1"
-  "poc.messages.persisted.v1"
   "poc.messages.submitted.v1-dlt"
-  "poc.messages.persisted.v1-dlt"
+  "poc.messages.results.v1-dlt"
 )
 
 CONSUMER_GROUPS=(

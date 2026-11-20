@@ -39,6 +39,11 @@ above `0.70` through `0.95` produce `MessageRejected`; scores above `0.95` go to
 the submitted DLT. Technical processing failures also go to that DLT after
 Kafka listener retries.
 
+Records from `poc.messages.results.v1` that `message-persistence` or
+`message-audit` cannot process are retried twice and then published to
+`poc.messages.results.v1-dlt` (inspect in Kafbat UI). Failures while consuming the
+submitted DLT are logged and skipped.
+
 ## Local observability
 
 ```text

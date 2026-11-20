@@ -225,6 +225,11 @@ is sent through the API successfully, but it is not shown in the public chat.
 it in the admin moderation log. It does not count as a strike unless
 `MODERATION_TECHNICAL_DLT_COUNTS_AS_STRIKE=true`.
 
+If `message-persistence` or `message-audit` fail to process a record from
+`poc.messages.results.v1` (after two retries), the record is published to
+`poc.messages.results.v1-dlt`; inspect it in Kafbat UI. Failures on the submitted
+DLT itself are logged and skipped, not republished.
+
 ## Deployment
 
 The application services are containerized and can run on Kubernetes-compatible
