@@ -2,12 +2,19 @@ package no.thurmann.messagepoc.api
 
 import jakarta.validation.Valid
 import jakarta.validation.constraints.NotBlank
+import jakarta.validation.constraints.Size
 import no.thurmann.messagepoc.contracts.KafkaTopics
+import no.thurmann.messagepoc.contracts.MessageAuthor
 import no.thurmann.messagepoc.contracts.MessageSubmittedEvent
 import no.thurmann.messagepoc.contracts.MessageSubmittedPayload
 import org.slf4j.LoggerFactory
+import org.springframework.dao.DataAccessException
+import org.springframework.http.HttpHeaders
+import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.kafka.core.KafkaTemplate
+import org.springframework.security.core.annotation.AuthenticationPrincipal
+import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestHeader
@@ -21,6 +28,7 @@ import java.util.concurrent.TimeUnit
 @RequestMapping("/api/messages")
 class MessageController(
     private val kafkaTemplate: KafkaTemplate<String, Any>,
+    private val userStatusLookup: UserStatusLookup,
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -28,16 +36,46 @@ class MessageController(
     fun submit(
         @Valid @RequestBody request: SubmitMessageRequest,
         @RequestHeader("X-Correlation-Id", required = false) correlationIdHeader: String?,
-    ): ResponseEntity<SubmitMessageResponse> {
+        @AuthenticationPrincipal jwt: Jwt,
+    ): ResponseEntity<*> {
+        val now = Instant.now()
+        val subject = jwt.subject ?: return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build<Nothing>()
+        val status = try {
+            userStatusLookup.find(subject, now)
+        } catch (e: DataAccessException) {
+            logger.atError()
+                .setCause(e)
+                .addKeyValue("authorId", subject)
+                .log("User status lookup failed")
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(mapOf("error" to "UNAVAILABLE"))
+        }
+
+        val handle = when (val decision = PostingGuard.evaluate(status, now)) {
+            is PostingDecision.Allowed -> decision.handle
+            PostingDecision.HandleRequired ->
+                return ResponseEntity.status(HttpStatus.CONFLICT).body(mapOf("error" to "HANDLE_REQUIRED"))
+            is PostingDecision.Banned ->
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .header(HttpHeaders.RETRY_AFTER, decision.remainingSeconds.toString())
+                    .body(
+                        mapOf(
+                            "error" to "BANNED",
+                            "bannedUntil" to decision.until,
+                            "remainingSeconds" to decision.remainingSeconds,
+                        ),
+                    )
+        }
+
         val messageId = UUID.randomUUID()
         val correlationId = correlationIdHeader.toUuidOrNull() ?: UUID.randomUUID()
         val event = MessageSubmittedEvent(
             eventId = UUID.randomUUID(),
-            occurredAt = Instant.now(),
+            occurredAt = now,
             messageId = messageId,
             correlationId = correlationId,
             producer = "message-api",
             payload = MessageSubmittedPayload(request.text.trim()),
+            author = MessageAuthor(userId = subject, handle = handle),
         )
 
         val sendResult = kafkaTemplate
@@ -49,6 +87,7 @@ class MessageController(
             .addKeyValue("eventType", event.eventType)
             .addKeyValue("messageId", event.messageId)
             .addKeyValue("correlationId", event.correlationId)
+            .addKeyValue("authorHandle", handle)
             .addKeyValue("profanityScore", event.profanityScore)
             .addKeyValue("topic", sendResult.recordMetadata.topic())
             .addKeyValue("partition", sendResult.recordMetadata.partition())
@@ -67,6 +106,7 @@ class MessageController(
 
 data class SubmitMessageRequest(
     @field:NotBlank
+    @field:Size(max = 500)
     val text: String,
 )
 
