@@ -1,52 +1,101 @@
 name: message-poc
 
 x-application-environment: &application-environment
-  KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+  KAFKA_BOOTSTRAP_SERVERS: kafka-1:29092,kafka-2:29092,kafka-3:29092
   DEPLOYMENT_ENVIRONMENT: local
   LOGGING_STRUCTURED_FORMAT_CONSOLE: logstash
   SPRING_MAIN_BANNER_MODE: "off"
 
+x-kafka-broker-environment: &kafka-broker-environment
+  CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+  KAFKA_PROCESS_ROLES: broker,controller
+  KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,HOST:PLAINTEXT,DOCKER:PLAINTEXT
+  KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+  KAFKA_INTER_BROKER_LISTENER_NAME: DOCKER
+  KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-1:9093,2@kafka-2:9093,3@kafka-3:9093
+  KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+  KAFKA_MIN_INSYNC_REPLICAS: 2
+  KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+  KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+  KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+  KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+  KAFKA_NUM_PARTITIONS: 3
+  KAFKA_HEAP_OPTS: -Xms256m -Xmx512m
+
 services:
-  kafka:
+  kafka-1:
     image: apache/kafka:4.3.1
-    hostname: kafka
+    hostname: kafka-1
     ports:
       - "9092:9092"
     environment:
+      <<: *kafka-broker-environment
       KAFKA_NODE_ID: 1
-      KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_LISTENERS: CONTROLLER://:9093,HOST://:9092,DOCKER://:29092
-      KAFKA_ADVERTISED_LISTENERS: HOST://localhost:9092,DOCKER://kafka:29092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,HOST:PLAINTEXT,DOCKER:PLAINTEXT
-      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_INTER_BROKER_LISTENER_NAME: DOCKER
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_ADVERTISED_LISTENERS: HOST://localhost:9092,DOCKER://kafka-1:29092
     volumes:
-      - kafka-data:/var/lib/kafka/data
+      - kafka-1-data:/var/lib/kafka/data
     healthcheck:
-      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
       interval: 5s
-      timeout: 5s
+      timeout: 10s
       retries: 20
-      start_period: 10s
+      start_period: 15s
+
+  kafka-2:
+    image: apache/kafka:4.3.1
+    hostname: kafka-2
+    ports:
+      - "9094:9094"
+    environment:
+      <<: *kafka-broker-environment
+      KAFKA_NODE_ID: 2
+      KAFKA_LISTENERS: CONTROLLER://:9093,HOST://:9094,DOCKER://:29092
+      KAFKA_ADVERTISED_LISTENERS: HOST://localhost:9094,DOCKER://kafka-2:29092
+    volumes:
+      - kafka-2-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9094 >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 15s
+
+  kafka-3:
+    image: apache/kafka:4.3.1
+    hostname: kafka-3
+    ports:
+      - "9096:9096"
+    environment:
+      <<: *kafka-broker-environment
+      KAFKA_NODE_ID: 3
+      KAFKA_LISTENERS: CONTROLLER://:9093,HOST://:9096,DOCKER://:29092
+      KAFKA_ADVERTISED_LISTENERS: HOST://localhost:9096,DOCKER://kafka-3:29092
+    volumes:
+      - kafka-3-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9096 >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 15s
 
   kafka-init:
     image: apache/kafka:4.3.1
     depends_on:
-      kafka:
+      kafka-1:
+        condition: service_healthy
+      kafka-2:
+        condition: service_healthy
+      kafka-3:
         condition: service_healthy
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
-        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --create --if-not-exists --topic poc.messages.submitted.v1 --partitions 3 --replication-factor 1
-        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --create --if-not-exists --topic poc.messages.results.v1 --partitions 3 --replication-factor 1
-        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --create --if-not-exists --topic poc.messages.submitted.v1-dlt --partitions 3 --replication-factor 1
-        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --create --if-not-exists --topic poc.messages.results.v1-dlt --partitions 3 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka-1:29092,kafka-2:29092,kafka-3:29092 --create --if-not-exists --topic poc.messages.submitted.v1 --partitions 3 --replication-factor 3 --config min.insync.replicas=2
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka-1:29092,kafka-2:29092,kafka-3:29092 --create --if-not-exists --topic poc.messages.results.v1 --partitions 3 --replication-factor 3 --config min.insync.replicas=2
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka-1:29092,kafka-2:29092,kafka-3:29092 --create --if-not-exists --topic poc.messages.submitted.v1-dlt --partitions 3 --replication-factor 3 --config min.insync.replicas=2
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka-1:29092,kafka-2:29092,kafka-3:29092 --create --if-not-exists --topic poc.messages.results.v1-dlt --partitions 3 --replication-factor 3 --config min.insync.replicas=2
 
   postgres:
     image: postgres:17-alpine
@@ -70,9 +119,13 @@ services:
       - "8085:8080"
     environment:
       KAFKA_CLUSTERS_0_NAME: local
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka-1:29092,kafka-2:29092,kafka-3:29092
     depends_on:
-      kafka:
+      kafka-1:
+        condition: service_healthy
+      kafka-2:
+        condition: service_healthy
+      kafka-3:
         condition: service_healthy
 
   message-api:
@@ -90,7 +143,11 @@ services:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       CORS_ALLOWED_ORIGINS: http://localhost:8083
     depends_on:
-      kafka:
+      kafka-1:
+        condition: service_healthy
+      kafka-2:
+        condition: service_healthy
+      kafka-3:
         condition: service_healthy
       kafka-init:
         condition: service_completed_successfully
@@ -114,7 +171,11 @@ services:
       TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
       TYPESAFE_API_URL: ${TYPESAFE_API_URL:-https://api.typesafe.ai/v1/systemone}
     depends_on:
-      kafka:
+      kafka-1:
+        condition: service_healthy
+      kafka-2:
+        condition: service_healthy
+      kafka-3:
         condition: service_healthy
       kafka-init:
         condition: service_completed_successfully
@@ -142,7 +203,11 @@ services:
       MODERATION_ESCALATION_WINDOW: ${MODERATION_ESCALATION_WINDOW:-1d}
       MODERATION_TECHNICAL_DLT_COUNTS_AS_STRIKE: ${MODERATION_TECHNICAL_DLT_COUNTS_AS_STRIKE:-false}
     depends_on:
-      kafka:
+      kafka-1:
+        condition: service_healthy
+      kafka-2:
+        condition: service_healthy
+      kafka-3:
         condition: service_healthy
       kafka-init:
         condition: service_completed_successfully
@@ -159,7 +224,11 @@ services:
     init: true
     environment: *application-environment
     depends_on:
-      kafka:
+      kafka-1:
+        condition: service_healthy
+      kafka-2:
+        condition: service_healthy
+      kafka-3:
         condition: service_healthy
       kafka-init:
         condition: service_completed_successfully
@@ -207,7 +276,9 @@ services:
       - loki
 
 volumes:
-  kafka-data:
+  kafka-1-data:
+  kafka-2-data:
+  kafka-3-data:
   postgres-data:
   loki-data:
   alloy-data:

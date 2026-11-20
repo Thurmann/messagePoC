@@ -34,9 +34,18 @@ members in the same Kafka consumer groups, and a host `message-api` may continue
 to receive traffic on port 8080. This is useful when deliberately testing
 rebalancing, but confusing as the default development mode.
 
-Kafka is available at `localhost:9092`, PostgreSQL at `localhost:5432`, and
-the message API at `localhost:8080`. The live chat is served by
+Kafka runs as a three-broker KRaft cluster (`kafka-1`, `kafka-2`, `kafka-3`)
+reachable from the host at `localhost:9092`, `localhost:9094`, and
+`localhost:9096`. Topics use replication factor 3 and `min.insync.replicas=2`,
+so the cluster keeps accepting `acks=all` writes with one broker down. Each
+broker has a 512 MB heap cap.
+PostgreSQL is at `localhost:5432` and the message API at `localhost:8080`. The live chat is served by
 `message-persistence` at <http://localhost:8083>.
+
+If you previously ran the single-broker setup, run `docker compose down`
+first. The old `kafka-data` volume is no longer used and can be removed with
+`docker volume rm message-poc_kafka-data`; the new brokers start with fresh
+volumes and `kafka-init` recreates the topics.
 
 Local tools:
 
@@ -305,7 +314,7 @@ docker compose up --build -d message-persistence
 
 ## Reset local test data
 
-Reset Kafka topics, records, and application consumer-group offsets, then
+Reset Kafka topics (recreated with replication factor 3 and `min.insync.replicas=2`), records, and application consumer-group offsets, then
 restart the three Compose services:
 
 ```bash
