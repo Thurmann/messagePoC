@@ -20,10 +20,11 @@ data class BanDecision(
 class ModerationPolicy(
     private val properties: ModerationProperties,
 ) {
-    fun isWarning(strikes: Int): Boolean =
-        strikes >= properties.warningThreshold && strikes < properties.banThreshold
+    fun isWarning(strikes: Int, isAdmin: Boolean = false): Boolean =
+        strikes >= properties.warningThreshold && (isAdmin || strikes < properties.banThreshold)
 
-    fun decideBan(strikes: Int, now: Instant, previousBan: PreviousBan?): BanDecision? {
+    fun decideBan(strikes: Int, now: Instant, previousBan: PreviousBan?, isAdmin: Boolean = false): BanDecision? {
+        if (isAdmin) return null
         if (strikes < properties.banThreshold) return null
         if (previousBan != null && now.isBefore(previousBan.endsAt)) return null
 

@@ -83,6 +83,9 @@ Strikes and bans:
 - At 6 strikes (`MODERATION_BAN_THRESHOLD`) you are banned temporarily. The ban
   lengths follow `MODERATION_BAN_LADDER`, which defaults to 1 minute, 5 minutes,
   30 minutes, 2 hours, 12 hours, and 24 hours. The last step repeats.
+- Admins (`ADMIN_EMAILS` / `admin_user`) are never banned but still get warnings,
+  and their strikes are logged.
+
 - A new ban starts the next step on the ladder if it starts within
   `MODERATION_ESCALATION_WINDOW` (default `1d`) after the previous ban ended.
   Otherwise it starts at the first step again.

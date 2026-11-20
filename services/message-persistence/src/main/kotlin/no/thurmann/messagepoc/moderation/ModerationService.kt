@@ -39,7 +39,7 @@ class ModerationService(
             messageResultRepository.save(result)
 
             if (strike) {
-                val decision = policy.decideBan(result.strikesAfter ?: 0, Instant.now(), previousBan)
+                val decision = policy.decideBan(result.strikesAfter ?: 0, Instant.now(), previousBan, isAdmin(authorId))
                 if (decision != null) {
                     userBanRepository.save(
                         UserBan(
@@ -81,6 +81,13 @@ class ModerationService(
 
     private fun lockUser(userId: String): Boolean =
         jdbcTemplate.queryForList("SELECT google_sub FROM app_user WHERE google_sub = ? FOR UPDATE", String::class.java, userId).isNotEmpty()
+
+    private fun isAdmin(userId: String): Boolean =
+        jdbcTemplate.queryForObject(
+            "SELECT EXISTS (SELECT 1 FROM app_user u JOIN admin_user a ON lower(a.email) = lower(u.email) WHERE u.google_sub = ?)",
+            Boolean::class.java,
+            userId,
+        ) == true
 
     private fun UserBan.toPreviousBan() = PreviousBan(step = step, endsAt = endsAt)
 

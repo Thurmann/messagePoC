@@ -279,8 +279,8 @@
 
     // banners
     if (signed && me.warning && !me.ban) {
-      els['warn-banner'].textContent = 'You have ' + me.strikes + ' flagged messages. At ' + me.banThreshold +
-        ' your account is temporarily banned.';
+      els['warn-banner'].textContent = 'You have ' + me.strikes + ' flagged messages.' +
+        (me.isAdmin ? '' : ' At ' + me.banThreshold + ' your account is temporarily banned.');
       show(els['warn-banner'], true);
     } else show(els['warn-banner'], false);
     if (signed && me.ban) startBan(me.ban.until, me.ban.remainingSeconds); else stopBan();

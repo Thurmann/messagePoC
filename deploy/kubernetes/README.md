@@ -97,7 +97,7 @@ ON CONFLICT DO NOTHING;
 ```
 
 Removing an address from `ADMIN_EMAILS` does not remove its row, so delete the row
-explicitly if an admin should lose access.
+explicitly if an admin should lose access. Admins are never banned but still get warnings, and their strikes are logged.
 
 ## Moderation parameters
 

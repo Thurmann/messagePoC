@@ -23,6 +23,29 @@ class ModerationPolicyTest {
     }
 
     @Test
+    fun `admin never gets a ban at or above threshold`() {
+        assertNull(policy.decideBan(6, now, previousBan = null, isAdmin = true))
+        assertNull(policy.decideBan(50, now, previousBan = null, isAdmin = true))
+        val previous = PreviousBan(step = 0, endsAt = now.minus(Duration.ofHours(1)))
+        assertNull(policy.decideBan(6, now, previous, isAdmin = true))
+        assertEquals(1, policy.decideBan(6, now, previous, isAdmin = false)?.step)
+    }
+
+    @Test
+    fun `admin warning applies from warning threshold with no upper bound`() {
+        assertFalse(policy.isWarning(2, isAdmin = true))
+        assertTrue(policy.isWarning(3, isAdmin = true))
+        assertTrue(policy.isWarning(6, isAdmin = true))
+        assertTrue(policy.isWarning(100, isAdmin = true))
+    }
+
+    @Test
+    fun `non admin warning is unchanged`() {
+        assertTrue(policy.isWarning(5, isAdmin = false))
+        assertFalse(policy.isWarning(6, isAdmin = false))
+    }
+
+    @Test
     fun `no ban below ban threshold`() {
         assertNull(policy.decideBan(5, now, previousBan = null))
     }
