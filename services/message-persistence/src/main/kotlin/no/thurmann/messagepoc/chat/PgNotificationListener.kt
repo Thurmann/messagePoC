@@ -19,6 +19,8 @@ class PgNotificationListener(
 ) : SmartLifecycle {
     private val logger = LoggerFactory.getLogger(javaClass)
 
+    private val listenerUrl = JdbcUrls.withTcpKeepAlive(url)
+
     @Volatile
     private var running = false
     private var thread: Thread? = null
@@ -42,15 +44,24 @@ class PgNotificationListener(
 
     private fun listenLoop() {
         var backoffMillis = INITIAL_BACKOFF_MILLIS
+        var connectedBefore = false
         while (running) {
             try {
-                DriverManager.getConnection(url, username, password).use { connection ->
+                DriverManager.getConnection(listenerUrl, username, password).use { connection ->
                     connection.createStatement().use { it.execute("LISTEN chat_events") }
                     val pgConnection = connection.unwrap(PGConnection::class.java)
                     logger.info("Listening for chat_events notifications")
                     backoffMillis = INITIAL_BACKOFF_MILLIS
+                    if (connectedBefore) broadcaster.publishResync()
+                    connectedBefore = true
+                    var lastCheck = System.nanoTime()
                     while (running) {
                         pgConnection.getNotifications(5000)?.forEach { handle(it.parameter) }
+                        if (System.nanoTime() - lastCheck >= LIVENESS_INTERVAL_NANOS) {
+                            // detects half-open TCP connections; a failure falls into the reconnect path
+                            connection.createStatement().use { it.execute("SELECT 1") }
+                            lastCheck = System.nanoTime()
+                        }
                     }
                 }
             } catch (_: InterruptedException) {
@@ -85,5 +96,6 @@ class PgNotificationListener(
     private companion object {
         const val INITIAL_BACKOFF_MILLIS = 1_000L
         const val MAX_BACKOFF_MILLIS = 30_000L
+        const val LIVENESS_INTERVAL_NANOS = 30_000_000_000L
     }
 }

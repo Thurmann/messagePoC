@@ -1,5 +1,6 @@
 package no.thurmann.messagepoc.chat
 
+import jakarta.annotation.PreDestroy
 import org.slf4j.LoggerFactory
 import org.springframework.http.CacheControl
 import org.springframework.http.MediaType
@@ -8,36 +9,121 @@ import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
 import java.time.Duration
+import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CopyOnWriteArraySet
+import java.util.concurrent.Executors
+import java.util.concurrent.ThreadFactory
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
+/**
+ * Fans events out to SSE clients. Sends never run on the caller's thread: each subscriber has its own
+ * serial queue drained on a shared executor, so a stalled client only delays itself.
+ */
 @Component
 class SseBroadcaster {
     private val logger = LoggerFactory.getLogger(javaClass)
-    private val publicEmitters = CopyOnWriteArraySet<SseEmitter>()
-    private val adminEmitters = CopyOnWriteArraySet<SseEmitter>()
+    private val publicSubscribers = CopyOnWriteArraySet<Subscriber>()
+    private val adminSubscribers = CopyOnWriteArraySet<Subscriber>()
+    private val threadCounter = AtomicInteger()
+    private val executor = Executors.newCachedThreadPool(
+        ThreadFactory { runnable ->
+            Thread(runnable, "sse-fanout-${threadCounter.incrementAndGet()}").apply { isDaemon = true }
+        },
+    )
 
-    fun subscribePublic(): ResponseEntity<SseEmitter> = subscribe(publicEmitters)
+    private inner class Subscriber(val emitter: SseEmitter, private val registry: MutableSet<Subscriber>) {
+        private val queue = ConcurrentLinkedQueue<(SseEmitter) -> Unit>()
+        private val draining = AtomicBoolean(false)
+        private val size = AtomicInteger()
 
-    fun subscribeAdmin(): ResponseEntity<SseEmitter> = subscribe(adminEmitters)
+        @Volatile
+        var closed = false
 
-    fun publishPublic(event: PublicChatEvent) = publish(publicEmitters, event.type, event)
+        fun enqueue(action: (SseEmitter) -> Unit) {
+            if (closed) return
+            if (size.incrementAndGet() > MAX_QUEUED_EVENTS) {
+                logger.debug("Dropping SSE emitter with a full send queue")
+                fail(null)
+                return
+            }
+            queue.add(action)
+            scheduleDrain()
+        }
 
-    fun publishAdmin(row: AdminModerationRow) = publish(adminEmitters, "moderation", row)
+        private fun scheduleDrain() {
+            if (!draining.compareAndSet(false, true)) return
+            try {
+                executor.execute(::drain)
+            } catch (exception: Exception) {
+                draining.set(false)
+                fail(exception)
+            }
+        }
 
-    @Scheduled(fixedRate = 15_000)
-    fun ping() {
-        (publicEmitters + adminEmitters).forEach { emitter ->
-            send(emitter, publicEmitters, adminEmitters) { it.send(SseEmitter.event().comment("ping")) }
+        private fun drain() {
+            try {
+                while (!closed) {
+                    val action = queue.poll() ?: break
+                    size.decrementAndGet()
+                    action(emitter)
+                }
+            } catch (exception: Exception) {
+                fail(exception)
+            } finally {
+                draining.set(false)
+                if (!closed && queue.isNotEmpty()) scheduleDrain()
+            }
+        }
+
+        fun fail(exception: Exception?) {
+            if (exception != null) logger.debug("Removing SSE emitter after send failure", exception)
+            closed = true
+            queue.clear()
+            registry.remove(this)
+            try {
+                emitter.complete()
+            } catch (_: Exception) {
+                // already completed
+            }
         }
     }
 
-    private fun subscribe(registry: MutableSet<SseEmitter>): ResponseEntity<SseEmitter> {
+    fun subscribePublic(): ResponseEntity<SseEmitter> = subscribe(publicSubscribers)
+
+    fun subscribeAdmin(): ResponseEntity<SseEmitter> = subscribe(adminSubscribers)
+
+    fun publishPublic(event: PublicChatEvent) = publish(publicSubscribers, event.type, event)
+
+    fun publishAdmin(row: AdminModerationRow) = publish(adminSubscribers, "moderation", row)
+
+    /** Tells every client to reload state it may have missed (e.g. after the notification listener reconnected). */
+    fun publishResync() {
+        publish(publicSubscribers, "resync", emptyMap<String, String>())
+        publish(adminSubscribers, "resync", emptyMap<String, String>())
+    }
+
+    @Scheduled(fixedRate = 15_000)
+    fun ping() {
+        (publicSubscribers + adminSubscribers).forEach { it.enqueue { emitter -> emitter.send(SseEmitter.event().comment("ping")) } }
+    }
+
+    @PreDestroy
+    fun shutdown() {
+        executor.shutdownNow()
+        (publicSubscribers + adminSubscribers).forEach { it.closed = true }
+        publicSubscribers.clear()
+        adminSubscribers.clear()
+    }
+
+    private fun subscribe(registry: MutableSet<Subscriber>): ResponseEntity<SseEmitter> {
         val emitter = SseEmitter(Duration.ofHours(1).toMillis())
-        registry.add(emitter)
-        emitter.onCompletion { registry.remove(emitter) }
-        emitter.onTimeout { registry.remove(emitter) }
-        emitter.onError { registry.remove(emitter) }
-        send(emitter, registry) { it.send(SseEmitter.event().comment("connected")) }
+        val subscriber = Subscriber(emitter, registry)
+        registry.add(subscriber)
+        emitter.onCompletion { subscriber.closed = true; registry.remove(subscriber) }
+        emitter.onTimeout { subscriber.closed = true; registry.remove(subscriber) }
+        emitter.onError { subscriber.closed = true; registry.remove(subscriber) }
+        subscriber.enqueue { it.send(SseEmitter.event().comment("connected")) }
         return ResponseEntity.ok()
             .contentType(MediaType.TEXT_EVENT_STREAM)
             .cacheControl(CacheControl.noCache())
@@ -45,18 +131,13 @@ class SseBroadcaster {
             .body(emitter)
     }
 
-    private fun publish(registry: Set<SseEmitter>, name: String, data: Any) {
-        registry.forEach { emitter ->
-            send(emitter, registry) { it.send(SseEmitter.event().name(name).data(data, MediaType.APPLICATION_JSON)) }
+    private fun publish(registry: Set<Subscriber>, name: String, data: Any) {
+        registry.forEach { subscriber ->
+            subscriber.enqueue { it.send(SseEmitter.event().name(name).data(data, MediaType.APPLICATION_JSON)) }
         }
     }
 
-    private fun send(emitter: SseEmitter, vararg registries: Set<SseEmitter>, action: (SseEmitter) -> Unit) {
-        try {
-            action(emitter)
-        } catch (exception: Exception) {
-            logger.debug("Removing SSE emitter after send failure", exception)
-            registries.forEach { (it as MutableSet<SseEmitter>).remove(emitter) }
-        }
+    private companion object {
+        const val MAX_QUEUED_EVENTS = 1_000
     }
 }
