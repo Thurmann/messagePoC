@@ -1,0 +1,39 @@
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: poc.messages.submitted.v1
+  labels:
+    strimzi.io/cluster: message-poc
+spec:
+  partitions: 3
+  replicas: 1
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: poc.messages.results.v1
+  labels:
+    strimzi.io/cluster: message-poc
+spec:
+  partitions: 3
+  replicas: 1
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: poc.messages.submitted.v1-dlt
+  labels:
+    strimzi.io/cluster: message-poc
+spec:
+  partitions: 3
+  replicas: 1
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: poc.messages.results.v1-dlt
+  labels:
+    strimzi.io/cluster: message-poc
+spec:
+  partitions: 3
+  replicas: 1
