@@ -1,0 +1,65 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: message-poc
+
+resources:
+  - ../kubernetes
+  - ../kubernetes/kafka
+  # cluster-issuer.yaml is NOT listed here: the namespace transformer would stamp a
+  # namespace onto the cluster-scoped ClusterIssuer. Apply it separately with
+  # kubectl apply -f deploy/azure/cluster-issuer.yaml
+
+# Names match the image names as rendered by the base kustomization.
+images:
+  - name: ghcr.io/your-org/message-api
+    newName: <your-acr>.azurecr.io/message-poc/message-api
+    newTag: 0.1.0
+  - name: ghcr.io/your-org/validation-service
+    newName: <your-acr>.azurecr.io/message-poc/validation-service
+    newTag: 0.1.0
+  - name: ghcr.io/your-org/message-persistence
+    newName: <your-acr>.azurecr.io/message-poc/message-persistence
+    newTag: 0.1.0
+  - name: ghcr.io/your-org/message-audit
+    newName: <your-acr>.azurecr.io/message-poc/message-audit
+    newTag: 0.1.0
+
+patches:
+  - target:
+      kind: ConfigMap
+      name: message-poc-config
+    patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: message-poc-config
+      data:
+        GOOGLE_CLIENT_ID: "REPLACE_WITH_GOOGLE_OAUTH_CLIENT_ID.apps.googleusercontent.com"
+        ADMIN_EMAILS: "you@example.com"
+        JDBC_URL: "jdbc:postgresql://<pg-server>.postgres.database.azure.com:5432/message_poc?sslmode=require"
+        LOKI_URL: "http://loki:3100"
+        MODERATION_TECHNICAL_DLT_COUNTS_AS_STRIKE: "false"
+
+  - target:
+      kind: Ingress
+      name: message-poc
+    patch: |-
+      - op: add
+        path: /spec/ingressClassName
+        value: webapprouting.kubernetes.azure.com
+      - op: add
+        path: /metadata/annotations/cert-manager.io~1cluster-issuer
+        value: letsencrypt-prod
+      - op: replace
+        path: /spec/rules/0/host
+        value: messages.example.com
+      - op: replace
+        path: /spec/rules/1/host
+        value: api.messages.example.com
+      - op: replace
+        path: /spec/tls/0/hosts/0
+        value: messages.example.com
+      - op: replace
+        path: /spec/tls/0/hosts/1
+        value: api.messages.example.com
