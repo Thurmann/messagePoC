@@ -35,7 +35,7 @@ patches:
       metadata:
         name: message-poc-config
       data:
-        GOOGLE_CLIENT_ID: "REPLACE_WITH_GOOGLE_OAUTH_CLIENT_ID.apps.googleusercontent.com"
+        GOOGLE_CLIENT_ID: "967572805977-3nq0bn5possa5g942djuhg21c2apoq50.apps.googleusercontent.com"
         ADMIN_EMAILS: "you@example.com"
         JDBC_URL: "jdbc:postgresql://<pg-server>.postgres.database.azure.com:5432/message_poc?sslmode=require"
         LOKI_URL: "http://loki:3100"
