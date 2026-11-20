@@ -210,12 +210,12 @@ The services need four topics. The names come from
 | `poc.messages.submitted.v1` | message-api | validation-service (`validation-service-v1`) |
 | `poc.messages.results.v1` | validation-service | message-persistence (`message-persistence-v1`), message-audit (`message-audit-v1`) |
 | `poc.messages.submitted.v1-dlt` | validation-service | message-persistence, message-audit |
-| `poc.messages.results.v1-dlt` | nothing in the code today | nothing |
+| `poc.messages.results.v1-dlt` | message-persistence, message-audit (after retries) | nothing (inspect manually) |
 
-`poc.messages.results.v1-dlt` is declared in `KafkaTopics.kt` but no code uses
-it. It is created anyway so the names match the contract. `compose.yaml` creates
-only three topics, and `scripts/reset-local.sh` lists stale topic names, so
-do not copy those lists.
+`poc.messages.results.v1-dlt` receives result records that message-persistence
+or message-audit failed to process after two retries. No service consumes it;
+inspect it with a Kafka client or Kafbat UI. The same four topics are created by
+`compose.yaml` and `scripts/reset-local.sh` locally.
 
 Kafka runs inside the cluster through [Strimzi](https://strimzi.io): a
 three-node KRaft cluster (combined controller and broker roles) with a 10Gi
