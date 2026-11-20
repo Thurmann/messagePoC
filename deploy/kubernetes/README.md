@@ -1,10 +1,40 @@
 # Kubernetes deployment
 
-This portable Kubernetes base deploys the four application containers. It
-expects a Kafka-compatible broker, PostgreSQL database, and Loki endpoint to be
-provided by the target environment. Kafka, PostgreSQL, Loki, and a log shipper
-are deliberately not installed by these manifests; use managed services or
-the platform's supported operators.
+This portable Kubernetes base deploys the four application containers. By
+default it expects Kafka in the cluster via the Strimzi operator (see
+[Kafka](#kafka) below). PostgreSQL, Loki, and a log shipper are deliberately not
+installed by these manifests; use managed services or the platform's supported
+operators. The base itself does not include `kafka/`; overlays reference it, so
+clusters with managed Kafka can skip it. An example overlay is in
+`deploy/azure` (outside this directory, because kustomize forbids an overlay inside its own base).
+
+## Kafka
+
+The base ConfigMap points at `message-poc-kafka-bootstrap:9092` with
+`PLAINTEXT`, the bootstrap service of a Strimzi `Kafka` cluster named
+`message-poc` in the same namespace. The `kafka/` kustomization defines that
+cluster (single-node KRaft, 10Gi volume) and the four topics (3 partitions,
+1 replica). Install the operator once per cluster, then apply `kafka/` (or an
+overlay that includes it):
+
+```sh
+kubectl create namespace strimzi
+helm install strimzi-cluster-operator oci://quay.io/strimzi-helm/strimzi-kafka-operator \
+  -n strimzi --set watchAnyNamespace=true
+kubectl apply -k deploy/kubernetes/kafka -n <namespace>
+```
+
+The `version` in `kafka/kafka.yaml` must be supported by the installed operator
+release. This is a single-broker setup, not highly available.
+
+### Alternative: managed Kafka (Event Hubs, Confluent, ...)
+
+Skip `kafka/` and override these ConfigMap values in an overlay:
+`KAFKA_BOOTSTRAP_SERVERS` (the provider's address),
+`SPRING_KAFKA_PROPERTIES_SECURITY_PROTOCOL: SASL_SSL` and
+`SPRING_KAFKA_PROPERTIES_SASL_MECHANISM: PLAIN`. Add the key
+`SPRING_KAFKA_PROPERTIES_SASL_JAAS_CONFIG` to `message-poc-secrets`. Create the
+four topics with the provider's tooling.
 
 ## Build and publish the application images
 
@@ -27,15 +57,13 @@ and attach it to the pod specs.
 
 ## Configure and deploy
 
-Edit `configmap.yaml` with the Kafka bootstrap address, JDBC URL, Loki URL, and
-deployment environment. The example assumes SASL/SSL with PLAIN; set the Spring
-Kafka security properties to match the broker if it uses another supported
-mechanism. Supply credentials through the target platform's secret manager as
+Edit `configmap.yaml` with the JDBC URL, Loki URL, and deployment environment
+(and the Kafka settings only if you use managed Kafka). Supply credentials through the target platform's secret manager as
 a Kubernetes Secret named `message-poc-secrets` with these keys:
 
 - `TYPESAFE_API_KEY`
 - `DB_PASSWORD` (used by both `message-persistence` and `message-api`)
-- `SPRING_KAFKA_PROPERTIES_SASL_JAAS_CONFIG` when required by the broker
+- `SPRING_KAFKA_PROPERTIES_SASL_JAAS_CONFIG` only for managed Kafka that needs SASL (optional)
 
 Do not commit secret values. Configure the target cluster's logging collector
 to ship structured container stdout to the configured Loki endpoint using the
@@ -43,8 +71,9 @@ to ship structured container stdout to the configured Loki endpoint using the
 from Loki.
 
 Change both hosts in `ingress.yaml` to your chosen DNS names and arrange a TLS
-Secret named `message-poc-tls` through cert-manager or your platform's
-certificate integration. The Ingress uses the cluster's default ingress class;
+Secret named `message-poc-tls`. It is created by cert-manager through the
+`cert-manager.io/cluster-issuer` annotation on the Ingress (added in an overlay),
+or provided by the platform. The Ingress uses the cluster's default ingress class;
 set `spec.ingressClassName` for clusters that require one. On OpenShift, use an
 OpenShift Route for each host if the cluster does not provide an Ingress
 controller.

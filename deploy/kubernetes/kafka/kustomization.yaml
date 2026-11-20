@@ -1,0 +1,8 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# In-cluster Kafka via the Strimzi operator. Not part of the base: overlays
+# reference it, so clusters with managed Kafka can skip it.
+resources:
+  - kafka.yaml
+  - topics.yaml

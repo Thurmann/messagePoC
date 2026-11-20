@@ -5,9 +5,10 @@ metadata:
 data:
   DEPLOYMENT_ENVIRONMENT: poc
   LOGGING_STRUCTURED_FORMAT_CONSOLE: logstash
-  KAFKA_BOOTSTRAP_SERVERS: kafka-bootstrap.example.net:9092
-  SPRING_KAFKA_PROPERTIES_SECURITY_PROTOCOL: SASL_SSL
-  SPRING_KAFKA_PROPERTIES_SASL_MECHANISM: PLAIN
+  # Default: in-cluster Strimzi (see kafka/). For managed Kafka, override these
+  # in an overlay: bootstrap address, SASL_SSL, and SPRING_KAFKA_PROPERTIES_SASL_MECHANISM.
+  KAFKA_BOOTSTRAP_SERVERS: message-poc-kafka-bootstrap:9092
+  SPRING_KAFKA_PROPERTIES_SECURITY_PROTOCOL: PLAINTEXT
   JDBC_URL: jdbc:postgresql://postgres.example.net:5432/message_poc
   DB_USER: message_poc
   LOKI_URL: https://loki.example.net
