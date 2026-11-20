@@ -362,9 +362,10 @@ so they can run while the local stack is up.
 ## CI, releases and deployment
 
 GitHub Actions builds and tests every pull request and push to `main`, and also
-builds the four images and renders the Kubernetes manifests. Pushing a tag such
-as `v0.2.0` publishes the images to GHCR, creates a GitHub release, and, once it
-is enabled, deploys the release to AKS. See [CI, releases and deployment](docs/ci-cd.md).
+builds the four images and renders the Kubernetes manifests. Each green push to
+`main` is tagged with the next patch version (such as `v0.2.1`), which publishes
+the images to GHCR, creates a GitHub release, and, once it is enabled, deploys the
+release to AKS. See [CI, releases and deployment](docs/ci-cd.md).
 
 ## Stop
 

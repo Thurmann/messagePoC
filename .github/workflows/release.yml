@@ -1,12 +1,23 @@
 name: Release
 
-# Push a tag such as v0.2.0 (or v0.2.0-rc.1 for a prerelease) to build, publish and release.
+# CI tags main and calls this workflow after each green push. Pushing a tag such as v0.2.0
+# (or v0.2.0-rc.1 for a prerelease) by hand also builds, publishes and releases it.
 on:
   push:
     tags: ["v*.*.*"]
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag that is already pushed, for example v0.2.0
+        required: true
+        type: string
 
 permissions:
   contents: read
+
+# When called from CI, github.ref is main, so the tag comes from the input.
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
 
 # One release at a time, so the ordering check below sees every earlier release.
 concurrency:
@@ -24,15 +35,16 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ env.TAG }}
           # The release checks need main and the other release tags.
           fetch-depth: 0
 
       - name: Read version from tag
         id: version
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="${TAG#v}"
           if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::Tag $GITHUB_REF_NAME is not a semantic version such as v1.2.3 or v1.2.3-rc.1"
+            echo "::error::Tag $TAG is not a semantic version such as v1.2.3 or v1.2.3-rc.1"
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -47,19 +59,19 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           git fetch --no-tags origin main
-          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
-            echo "::error::$GITHUB_REF_NAME points at a commit that is not on main"
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "::error::$TAG points at a commit that is not on main"
             exit 1
           fi
           # Compare the version without its prerelease suffix against the highest stable tag,
           # so v1.2.0-rc.1 is allowed before v1.2.0 but not after it.
           core="${VERSION%%-*}"
-          latest=$(git tag --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | grep -vxF "$GITHUB_REF_NAME" \
+          latest=$(git tag --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | grep -vxF "$TAG" \
             | sed 's/^v//' | sort -V | tail -n1)
           if [[ -n "$latest" ]]; then
             highest=$(printf '%s\n%s\n' "$latest" "$core" | sort -V | tail -n1)
             if [[ "$core" == "$latest" || "$highest" != "$core" ]]; then
-              echo "::error::$GITHUB_REF_NAME is not newer than the latest release v$latest"
+              echo "::error::$TAG is not newer than the latest release v$latest"
               exit 1
             fi
           fi
@@ -98,6 +110,8 @@ jobs:
         service: [message-api, validation-service, message-persistence, message-audit]
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
 
       - uses: docker/setup-buildx-action@v4
 
@@ -114,8 +128,8 @@ jobs:
           images: ghcr.io/${{ github.repository_owner }}/message-poc/${{ matrix.service }}
           # Tags without the v prefix match the newTag convention in the kustomizations.
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}},enable=${{ needs.verify.outputs.prerelease == 'false' }}
+            type=semver,pattern={{version}},value=${{ env.TAG }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ env.TAG }},enable=${{ needs.verify.outputs.prerelease == 'false' }}
           flavor: |
             latest=${{ needs.verify.outputs.prerelease == 'false' }}
 
@@ -160,11 +174,11 @@ jobs:
               echo "- \`ghcr.io/${owner}/message-poc/${svc}:${VERSION}\`"
             done
           } > notes.md
-          args=(--repo "$GITHUB_REPOSITORY" --verify-tag --title "$GITHUB_REF_NAME" --notes-file notes.md --generate-notes)
+          args=(--repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --notes-file notes.md --generate-notes)
           if [[ "$PRERELEASE" == "true" ]]; then
             args+=(--prerelease)
           fi
-          gh release create "$GITHUB_REF_NAME" "${args[@]}" jars/*/build/libs/*.jar
+          gh release create "$TAG" "${args[@]}" jars/*/build/libs/*.jar
 
   deploy:
     name: Deploy

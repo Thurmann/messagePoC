@@ -4,22 +4,33 @@ Three GitHub Actions workflows live in `.github/workflows`:
 
 | Workflow | Trigger | What it does |
 | --- | --- | --- |
-| `ci.yml` | Pull requests, pushes to `main`, manual | `./gradlew build` (unit and Testcontainers integration tests), a Docker build of each of the four service images (not pushed), and a `kubectl kustomize` render of `deploy/kubernetes`, `deploy/kubernetes/kafka` and `deploy/azure` |
-| `release.yml` | Tags `v*.*.*` | Builds and tests, pushes the images to GHCR, creates the GitHub release, and deploys stable releases to AKS when deployment is enabled |
+| `ci.yml` | Pull requests, pushes to `main`, manual | `./gradlew build` (unit and Testcontainers integration tests), a Docker build of each of the four service images (not pushed), and a `kubectl kustomize` render of `deploy/kubernetes`, `deploy/kubernetes/kafka` and `deploy/azure`. On `main`, it then tags the next version and calls `release.yml` |
+| `release.yml` | Called by `ci.yml`, or tags `v*.*.*` pushed by hand | Builds and tests, pushes the images to GHCR, creates the GitHub release, and deploys stable releases to AKS when deployment is enabled |
 | `deploy.yml` | Called by `release.yml`, or run manually with a version | Imports a released version's images into ACR and applies `deploy/azure` from that release tag to AKS |
 
 ## Cut a release
 
-Releases are made from a tag on `main`. Use a semantic version with a `v` prefix:
+Every push to `main` that passes CI is released. The `Tag release` job in `ci.yml`
+bumps the patch version of the latest stable tag (`v0.1.0` → `v0.1.1`), pushes the
+tag, and calls the release workflow. For a minor or major release, run **CI** from
+the Actions tab on `main` and choose `minor` or `major`.
+
+The tag is pushed with `GITHUB_TOKEN`, so no personal access token is needed.
+Tags pushed with that token do not start other workflows, which is why CI calls
+`release.yml` directly instead of relying on its tag trigger. If a tag ruleset
+protects `v*` tags, allow GitHub Actions to bypass it.
+
+A tag on `main` pushed by hand is still released, which is how to cut a
+prerelease. CI does not tag a commit that already has a release tag:
 
 ```bash
 git switch main
 git pull
-git tag -a v0.2.0 -m "v0.2.0"
-git push origin v0.2.0
+git tag -a v0.2.0-rc.1 -m "v0.2.0-rc.1"
+git push origin v0.2.0-rc.1
 ```
 
-The release workflow then:
+For `v0.2.0`, the release workflow then:
 
 1. Builds and tests with `-PreleaseVersion=0.2.0`, so the service jars are named
    `<service>-0.2.0.jar` (without the property, the version stays `0.1.0-SNAPSHOT`).
@@ -40,8 +51,9 @@ than the latest stable release (`v0.1.5` after `v0.3.0`, or `v0.3.0-rc.1` after
 `v0.3.0`), so an old version cannot take over `latest` or be deployed over a newer
 one. To roll back, run the Deploy workflow manually with the older version.
 
-If a release run fails before the GitHub release is created, fix the problem on
-`main`, then tag a new version. Do not move an existing tag.
+If a release run fails before the GitHub release is created, re-run the failed jobs
+if the failure was transient. Otherwise fix the problem on `main`; the push is
+released as the next version. Do not move an existing tag.
 
 The first time an image is published, check its visibility under the
 repository's Packages. AKS pulls from ACR, not from GHCR, so the packages can be
@@ -80,9 +92,9 @@ in GitHub.
      `kubelogin convert-kubeconfig -l azurecli` after `az aks get-credentials` in `deploy.yml`.
 3. In GitHub, create the environment `production` (Settings → Environments). Add
    required reviewers there if each deployment should wait for approval.
-   Automatic deployments run on the release tag, so leave the deployment
-   branch/tag policy unset, or allow the tag pattern `v*` (and `main`, for manual
-   runs). Add these environment variables:
+   Automatic deployments run from `main` (through CI) or from a release tag
+   pushed by hand, so leave the deployment branch/tag policy unset, or allow
+   `main` and the tag pattern `v*`. Add these environment variables:
 
    | Variable | Value |
    | --- | --- |
