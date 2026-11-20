@@ -96,9 +96,9 @@ class ModerationPolicyTest {
 
     @Test
     fun `technical dlt counts as strike only when configured`() {
-        assertTrue(policy.countsAsStrike(MessageResultStatus.DLT, null))
-        assertFalse(
-            ModerationPolicy(ModerationProperties(technicalDltCountsAsStrike = false))
+        assertFalse(policy.countsAsStrike(MessageResultStatus.DLT, null))
+        assertTrue(
+            ModerationPolicy(ModerationProperties(technicalDltCountsAsStrike = true))
                 .countsAsStrike(MessageResultStatus.DLT, null),
         )
     }
