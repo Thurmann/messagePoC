@@ -8,8 +8,9 @@ on:
 permissions:
   contents: read
 
+# One release at a time, so the ordering check below sees every earlier release.
 concurrency:
-  group: release-${{ github.ref }}
+  group: release
   cancel-in-progress: false
 
 jobs:
@@ -22,6 +23,9 @@ jobs:
       prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          # The release checks need main and the other release tags.
+          fetch-depth: 0
 
       - name: Read version from tag
         id: version
@@ -36,6 +40,28 @@ jobs:
             echo "prerelease=true" >> "$GITHUB_OUTPUT"
           else
             echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check the tag is on main and newer than the latest release
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$GITHUB_REF_NAME points at a commit that is not on main"
+            exit 1
+          fi
+          # Compare the version without its prerelease suffix against the highest stable tag,
+          # so v1.2.0-rc.1 is allowed before v1.2.0 but not after it.
+          core="${VERSION%%-*}"
+          latest=$(git tag --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | grep -vxF "$GITHUB_REF_NAME" \
+            | sed 's/^v//' | sort -V | tail -n1)
+          if [[ -n "$latest" ]]; then
+            highest=$(printf '%s\n%s\n' "$latest" "$core" | sort -V | tail -n1)
+            if [[ "$core" == "$latest" || "$highest" != "$core" ]]; then
+              echo "::error::$GITHUB_REF_NAME is not newer than the latest release v$latest"
+              exit 1
+            fi
           fi
 
       - uses: actions/setup-java@v6
