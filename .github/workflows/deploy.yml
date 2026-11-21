@@ -1,7 +1,8 @@
 name: Deploy
 
 # Deploys a released version to AKS: imports its GHCR images into ACR, renders deploy/azure from the
-# release tag with those images, and applies it. Setup is described in docs/ci-cd.md.
+# release tag with those images and the production environment's values, and applies it. Setup is
+# described in docs/ci-cd.md.
 on:
   workflow_call:
     inputs:
@@ -71,6 +72,19 @@ jobs:
 
       - uses: azure/setup-kubectl@v5
 
+      # Between showcases the ephemeral resource group (registry and cluster) is deleted.
+      - name: Check that the cluster exists
+        env:
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          AKS_NAME: ${{ vars.AKS_NAME }}
+          ACR_NAME: ${{ vars.ACR_NAME }}
+        run: |
+          if ! az aks show --resource-group "$AZURE_RESOURCE_GROUP" --name "$AKS_NAME" --query id --output none 2>/dev/null ||
+            ! az acr show --name "$ACR_NAME" --query id --output none 2>/dev/null; then
+            echo "::error::AKS cluster $AKS_NAME or registry $ACR_NAME does not exist. Run scripts/azure-up.sh first, or set DEPLOY_TO_AKS=false while the showcase is torn down."
+            exit 1
+          fi
+
       - name: Import images into ACR
         env:
           ACR_NAME: ${{ vars.ACR_NAME }}
@@ -78,20 +92,37 @@ jobs:
         run: |
           owner="${GITHUB_REPOSITORY_OWNER,,}"
           for svc in $SERVICES; do
+            # Release tags are immutable, so an image already in ACR is not imported again.
+            if az acr repository show --name "$ACR_NAME" --image "message-poc/${svc}:${VERSION}" --output none 2>/dev/null; then
+              echo "${svc}:${VERSION} is already in ${ACR_NAME}"
+              continue
+            fi
             az acr import --name "$ACR_NAME" --force \
               --source "ghcr.io/${owner}/message-poc/${svc}:${VERSION}" \
               --image "message-poc/${svc}:${VERSION}" \
               --username "$GITHUB_ACTOR" --password "$GHCR_TOKEN"
           done
 
+      # The committed overlay may keep its placeholders; these environment variables fill them in
+      # (the same substitution as scripts/azure-up.sh). Values committed in the overlay also work.
       - name: Render manifests
         env:
           ACR_NAME: ${{ vars.ACR_NAME }}
+          PG_SERVER: ${{ vars.PG_SERVER }}
+          HOST: ${{ vars.HOST }}
+          API_HOST: ${{ vars.API_HOST }}
+          ADMIN_EMAILS: ${{ vars.ADMIN_EMAILS }}
+          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
         run: |
+          esc() { printf '%s' "$1" | sed -e 's/[#&\\]/\\&/g'; }
           login_server=$(az acr show --name "$ACR_NAME" --query loginServer --output tsv)
-          kubectl kustomize deploy/azure \
-            | sed -E "s#^([[:space:]]*image:[[:space:]]*).*/message-poc/(message-api|validation-service|message-persistence|message-audit):.*#\1${login_server}/message-poc/\2:${VERSION}#" \
-            > "$RUNNER_TEMP/manifests.yaml"
+          subst=(-e "s#^([[:space:]]*image:[[:space:]]*).*/message-poc/(message-api|validation-service|message-persistence|message-audit):.*#\\1${login_server}/message-poc/\\2:${VERSION}#")
+          [[ -z "$PG_SERVER" ]] || subst+=(-e "s#<pg-server>#$(esc "$PG_SERVER")#g")
+          [[ -z "$API_HOST" ]] || subst+=(-e "s#api\\.messages\\.example\\.com#$(esc "$API_HOST")#g")
+          [[ -z "$HOST" ]] || subst+=(-e "s#messages\\.example\\.com#$(esc "$HOST")#g")
+          [[ -z "$ADMIN_EMAILS" ]] || subst+=(-e "s#you@example\\.com#$(esc "$ADMIN_EMAILS")#g")
+          [[ -z "$GOOGLE_CLIENT_ID" ]] || subst+=(-e "s#^([[:space:]]*GOOGLE_CLIENT_ID:[[:space:]]*).*#\\1\"$(esc "$GOOGLE_CLIENT_ID")\"#")
+          kubectl kustomize deploy/azure | sed -E "${subst[@]}" > "$RUNNER_TEMP/manifests.yaml"
           grep -E '^[[:space:]]*image:' "$RUNNER_TEMP/manifests.yaml"
           for svc in $SERVICES; do
             want="${login_server}/message-poc/${svc}:${VERSION}"
@@ -103,7 +134,7 @@ jobs:
           done
           # <...> placeholders and the example.com values from deploy/azure must be replaced before deploying.
           if grep -nE '<[a-z][a-z0-9-]*>|example\.com' "$RUNNER_TEMP/manifests.yaml"; then
-            echo "::error::deploy/azure still has placeholder values at v${VERSION}; commit the real values (docs/deploy-to-azure.md step 9) and release again"
+            echo "::error::deploy/azure still has placeholder values at v${VERSION}; set PG_SERVER, HOST, API_HOST and ADMIN_EMAILS on the production environment (docs/ci-cd.md)"
             exit 1
           fi
 

@@ -255,7 +255,8 @@ To run the application on Azure (AKS) for a demo, use the scripted showcase:
 `scripts/azure-up.sh` creates the environment and deploys a release, and
 `scripts/azure-down.sh` deletes it again. See "Scripted showcase" in
 [`docs/deploy-to-azure.md`](docs/deploy-to-azure.md) for the setup, the costs and
-the limits (the scripts have been tested with stubbed CLIs only).
+the limits (the first real-Azure run needed several reruns and fixes; a full
+clean run of the fixed scripts is still to be done).
 
 Vercel can manage DNS for a domain whose runtime is hosted elsewhere. Point the
 chosen subdomain at the ingress: a CNAME at the hostname supplied by the cluster

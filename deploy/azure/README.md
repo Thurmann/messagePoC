@@ -8,8 +8,9 @@ cert-manager with Let's Encrypt. The full walkthrough is in
 To create and delete the whole environment with scripts, see "Scripted showcase" in
 the walkthrough. `scripts/azure-up.sh` substitutes the placeholders below from
 `scripts/azure.env` when it renders the manifests, so you can leave them as they
-are when you deploy with it. (The GitHub deploy workflow, `deploy.yml`, still needs
-real values committed.)
+are when you deploy with it. The GitHub deploy workflow (`deploy.yml`) does the same
+from the `production` environment variables `PG_SERVER`, `HOST`, `API_HOST`,
+`ADMIN_EMAILS` and optionally `GOOGLE_CLIENT_ID` (see `docs/ci-cd.md`).
 
 Replace these placeholders, then run `kubectl apply -f deploy/azure/cluster-issuer.yaml` (cluster-scoped, deliberately not part of the kustomization) and `kubectl apply -k deploy/azure`:
 

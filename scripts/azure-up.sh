@@ -188,8 +188,41 @@ render_issuers() {
 
 # --- read-only preflight ------------------------------------------------------------------
 
+# Fails when the node size is not offered to this subscription in the region (new
+# Pay-As-You-Go subscriptions are blocked from some regions, e.g. norwayeast), or when
+# its family's vCPU quota is too small for the node count.
+check_vm_size() {
+  local out family restricted cpus usage free want
+  log "Checking that $AKS_NODE_VM_SIZE is available in $LOCATION (can take a minute)"
+  out="$(az vm list-skus --location "$LOCATION" --size "$AKS_NODE_VM_SIZE" --all \
+    --query "[?name=='${AKS_NODE_VM_SIZE}'] | [0].[family, length(restrictions[?type=='Location']), capabilities[?name=='vCPUs'].value | [0]]" \
+    --output tsv 2>/dev/null || true)"
+  out="$(tr '\t' '\n' <<<"$out")"
+  family="$(sed -n 1p <<<"$out")"
+  restricted="$(sed -n 2p <<<"$out")"
+  cpus="$(sed -n 3p <<<"$out")"
+  if [[ -z "$family" ]]; then
+    warn "could not look up $AKS_NODE_VM_SIZE in $LOCATION; check the size name and region"
+    return 0
+  fi
+  if [[ "$restricted" =~ ^[0-9]+$ ]] && ((restricted > 0)); then
+    fail "$AKS_NODE_VM_SIZE is not available for this subscription in $LOCATION (NotAvailableForSubscription); choose another LOCATION or AKS_NODE_VM_SIZE"
+  fi
+  [[ "$cpus" =~ ^[0-9]+$ ]] || cpus=2
+  want=$((AKS_NODE_COUNT * cpus))
+  usage="$(az vm list-usage --location "$LOCATION" --query '[].[name.value,currentValue,limit]' --output tsv 2>/dev/null || true)"
+  if [[ -z "$usage" ]]; then
+    warn "could not read the vCPU quota in $LOCATION (Microsoft.Compute may not be registered yet); $want vCPU of $family are needed"
+    return 0
+  fi
+  free="$(awk -v f="$family" 'tolower($1) == tolower(f) { print $3 - $2; exit }' <<<"$usage")"
+  if [[ "$free" =~ ^-?[0-9]+$ ]] && ((free < want)); then
+    fail "only $free free vCPU in the $family quota in $LOCATION; $want are needed for $AKS_NODE_COUNT nodes. Request more quota, or choose another AKS_NODE_VM_SIZE or LOCATION"
+  fi
+}
+
 preflight() {
-  local out usage free want
+  local out
 
   section "Checking the Azure account and existing resources (read-only)"
   az_preflight
@@ -248,13 +281,8 @@ preflight() {
     esac
   fi
 
-  if [[ "$AKS_PROV" == "" && "$AKS_NODE_VM_SIZE" == Standard_D2s_v5 ]]; then
-    usage="$(az vm list-usage --location "$LOCATION" --query "[?name.value=='standardDSv5Family'].[currentValue,limit]" --output tsv 2>/dev/null || true)"
-    want=$((AKS_NODE_COUNT * 2))
-    free="$(awk 'NR == 1 { print $2 - $1 }' <<<"$usage")"
-    if [[ "$free" =~ ^-?[0-9]+$ ]] && ((free < want)); then
-      warn "only $free free vCPU in the standardDSv5Family quota in $LOCATION; $want are needed for $AKS_NODE_COUNT nodes"
-    fi
+  if [[ "$AKS_PROV" == "" ]]; then
+    check_vm_size
   fi
 
   if [[ -z "$OPERATOR_IP" ]]; then
@@ -292,6 +320,11 @@ print_up_summary() {
   log "Signed in as : $AZ_USER"
   log "Region       : $LOCATION"
   log "Version      : $VERSION$("$SKIP_DEPLOY" && printf ' (application deployment skipped)')"
+  if "$FROM_WORKTREE"; then
+    log "Manifests    : deploy/ from your working tree (--manifests-from-worktree), images $VERSION"
+  else
+    log "Manifests    : deploy/ from the release tag v$VERSION"
+  fi
   log "Host         : $HOST"
   log "API host     : $API_HOST"
   log "Admin emails : $ADMIN_EMAILS"
@@ -431,7 +464,7 @@ create_postgres() {
     az postgres flexible-server create --resource-group "$EPHEMERAL_RG" --name "$PG_SERVER" \
       --location "$LOCATION" --tier "$PG_TIER" --sku-name "$PG_SKU" --storage-size "$PG_STORAGE_GB" \
       --version "$PG_VERSION" --admin-user "$PG_ADMIN_USER" --admin-password "$PG_ADMIN_PASSWORD" \
-      --public-access "$OPERATOR_IP" --high-availability Disabled \
+      --public-access "$OPERATOR_IP" \
       --tags $(tags_for ephemeral) --yes --only-show-errors --output none
   fi
 }
@@ -531,8 +564,21 @@ psql_admin() {
     --set ON_ERROR_STOP=1 --set "admin_user=${PG_ADMIN_USER}" "$@"
 }
 
+# Creates firewall rule $1 for IP $2 unless a rule with that name and IP already exists
+# (each create is a slow long-running operation, so reruns skip it).
+ensure_pg_firewall_rule() {
+  if printf '%s\n' "$PG_RULES" | grep -qx "$1	$2"; then
+    log "Firewall rule $1 ($2) already exists."
+    return 0
+  fi
+  az postgres flexible-server firewall-rule create --resource-group "$EPHEMERAL_RG" --server-name "$PG_SERVER" \
+    --name "$1" --start-ip-address "$2" --end-ip-address "$2" --output none
+}
+
 configure_postgres() {
   local ids id ip n=0
+  PG_RULES="$(az postgres flexible-server firewall-rule list --resource-group "$EPHEMERAL_RG" --server-name "$PG_SERVER" \
+    --query '[?startIpAddress==endIpAddress].[name,startIpAddress]' --output tsv 2>/dev/null || true)"
   ids="$(az aks show --resource-group "$EPHEMERAL_RG" --name "$AKS_NAME" --query 'networkProfile.loadBalancerProfile.effectiveOutboundIPs[].id' --output tsv 2>/dev/null || true)"
   if [[ -z "$ids" ]]; then
     ids="$(az aks show --resource-group "$EPHEMERAL_RG" --name "$AKS_NAME" --query 'networkProfile.loadBalancerProfile.effectiveOutboundIps[].id' --output tsv 2>/dev/null || true)"
@@ -541,11 +587,9 @@ configure_postgres() {
   for id in $ids; do
     ip="$(az network public-ip show --ids "$id" --query ipAddress --output tsv)"
     n=$((n + 1))
-    az postgres flexible-server firewall-rule create --resource-group "$EPHEMERAL_RG" --name "$PG_SERVER" \
-      --rule-name "aks-egress-${n}" --start-ip-address "$ip" --end-ip-address "$ip" --output none
+    ensure_pg_firewall_rule "aks-egress-${n}" "$ip"
   done
-  az postgres flexible-server firewall-rule create --resource-group "$EPHEMERAL_RG" --name "$PG_SERVER" \
-    --rule-name operator --start-ip-address "$OPERATOR_IP" --end-ip-address "$OPERATOR_IP" --output none
+  ensure_pg_firewall_rule operator "$OPERATOR_IP"
 
   # The server accepts connections a moment after it reports Ready.
   for n in 1 2 3 4 5 6; do
@@ -566,6 +610,9 @@ SELECT 'CREATE DATABASE message_poc OWNER message_poc'
 WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'message_poc') \gexec
 SQL
   } | psql_admin postgres >/dev/null
+  # On Azure Flexible Server the public schema belongs to azure_pg_admin, not to the
+  # database owner, so Flyway (as message_poc) could not create tables in it.
+  psql_admin message_poc --command 'ALTER SCHEMA public OWNER TO message_poc' >/dev/null
 }
 
 restore_database() {
@@ -582,22 +629,44 @@ restore_database() {
     "$RESTORE_DB"
 }
 
+# True when release $1 in namespace $2 is deployed, and (if $3 is set) at chart version $3.
+# A rerun then skips the upgrade: on AKS the admissions enforcer edits the webhook
+# configurations, and a Helm 4 server-side upgrade fails on that field conflict.
+release_deployed() {
+  local out
+  out="$(h list --namespace "$2" --filter "^$1\$" --deployed --output json 2>/dev/null)" || return 1
+  [[ "$out" == *"\"name\":\"$1\""* ]] || return 1
+  [[ -z "$3" || "$out" == *"\"chart\":\"$4-$3\""* || "$out" == *"\"chart\":\"$4-v${3#v}\""* ]]
+}
+
 install_operators() {
-  local strimzi_version=() cm_version=()
+  local strimzi_version=() cm_version=() force=()
   if [[ -n "$STRIMZI_CHART_VERSION" ]]; then
     strimzi_version=(--version "$STRIMZI_CHART_VERSION")
   fi
   if [[ -n "$CERT_MANAGER_CHART_VERSION" ]]; then
     cm_version=(--version "$CERT_MANAGER_CHART_VERSION")
   fi
-  h upgrade --install strimzi-cluster-operator oci://quay.io/strimzi-helm/strimzi-kafka-operator \
-    --namespace strimzi --create-namespace --set watchAnyNamespace=true \
-    ${strimzi_version[@]+"${strimzi_version[@]}"} --wait --timeout 10m
-  h repo add jetstack https://charts.jetstack.io --force-update >/dev/null
-  h repo update jetstack >/dev/null
-  h upgrade --install cert-manager jetstack/cert-manager \
-    --namespace cert-manager --create-namespace --set crds.enabled=true \
-    ${cm_version[@]+"${cm_version[@]}"} --wait --timeout 10m
+  # Helm 4 applies server-side; let it take over fields the AKS admissions enforcer set.
+  if helm upgrade --help 2>/dev/null | grep -q -- '--force-conflicts'; then
+    force=(--force-conflicts)
+  fi
+  if release_deployed strimzi-cluster-operator strimzi "$STRIMZI_CHART_VERSION" strimzi-kafka-operator; then
+    log "Strimzi is already installed; skipping the upgrade."
+  else
+    h upgrade --install strimzi-cluster-operator oci://quay.io/strimzi-helm/strimzi-kafka-operator \
+      --namespace strimzi --create-namespace --set watchAnyNamespace=true \
+      ${strimzi_version[@]+"${strimzi_version[@]}"} ${force[@]+"${force[@]}"} --wait --timeout 10m
+  fi
+  if release_deployed cert-manager cert-manager "$CERT_MANAGER_CHART_VERSION" cert-manager; then
+    log "cert-manager is already installed; skipping the upgrade."
+  else
+    h repo add jetstack https://charts.jetstack.io --force-update >/dev/null
+    h repo update jetstack >/dev/null
+    h upgrade --install cert-manager jetstack/cert-manager \
+      --namespace cert-manager --create-namespace --set crds.enabled=true \
+      ${cm_version[@]+"${cm_version[@]}"} ${force[@]+"${force[@]}"} --wait --timeout 10m
+  fi
 }
 
 apply_cluster_issuers() {
@@ -674,6 +743,11 @@ import_images() {
     log "No GitHub credentials found; importing anonymously (works for public packages)."
   fi
   for svc in $SERVICES; do
+    # Release tags are immutable, so an image already in ACR does not need importing again.
+    if az acr repository show --name "$ACR_NAME" --image "message-poc/${svc}:${VERSION}" --output none >/dev/null 2>&1; then
+      log "$svc:$VERSION is already in $ACR_NAME."
+      continue
+    fi
     az acr import --name "$ACR_NAME" --force \
       --source "ghcr.io/${owner}/message-poc/${svc}:${VERSION}" \
       --image "message-poc/${svc}:${VERSION}" \

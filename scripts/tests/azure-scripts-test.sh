@@ -78,11 +78,13 @@ case "$name" in
         if [[ -n "${STUB_RG_DELETING:-}" && "$args" == *" rg-message-poc "* ]]; then echo true; else echo false; fi ;;
       *" group show "*provisioningState*) echo "${STUB_RG_DELETING:-Succeeded}" ;;
       *" acr check-name "*) echo true ;;
+      *" acr repository show "*) exit 3 ;;
       *" rest "*) echo true ;;
       *" network public-ip show "*)
         if [[ -f "$STUB_DIR/pip-created" ]]; then echo 20.0.0.1; else exit 3; fi ;;
       *" network public-ip create "*) touch "$STUB_DIR/pip-created" ;;
-      *" vm list-usage "*) printf '0\t10\n' ;;
+      *" vm list-skus "*) printf '%b\n' "${STUB_SKU:-standardDSv5Family\t0\t2}" ;;
+      *" vm list-usage "*) printf '%b\n' "${STUB_USAGE:-standardDSv5Family\t0\t10}" ;;
       *" approuting update --help"*) echo "  --nginx" ;;
       *" aks show "*identity*) echo principal-1 ;;
       *" aks show "*) printf 'ouroutbound\n' ;;
@@ -223,6 +225,15 @@ rc=0
 (export AZURE_SCRIPTS_ALLOW_NON_TTY=1 STUB_RG_DELETING=Deleting; run_up --skip-deploy --dry-run </dev/null) || rc=$?
 check "up deleting group: refuses" '[[ $rc -ne 0 ]] && grep -q "previous deletion of rg-message-poc is still running" "$T/out.txt"'
 check "up deleting group: no mutating call" 'nomut'
+
+rc=0
+(export AZURE_SCRIPTS_ALLOW_NON_TTY=1 STUB_SKU='standardDSv5Family\t1\t2'; run_up --dry-run </dev/null) || rc=$?
+check "up size not offered in region: refuses" '[[ $rc -ne 0 ]] && grep -q "NotAvailableForSubscription" "$T/out.txt"'
+check "up size not offered in region: no mutating call" 'nomut'
+
+rc=0
+(export AZURE_SCRIPTS_ALLOW_NON_TTY=1 STUB_USAGE='standardDSv5Family\t0\t4'; run_up --dry-run </dev/null) || rc=$?
+check "up quota too small: refuses" '[[ $rc -ne 0 ]] && grep -q "only 4 free vCPU in the standardDSv5Family quota" "$T/out.txt"'
 rc=0
 (unset TYPESAFE_API_KEY; : >"$STUB_LOG"; PATH="$T/bin-up:$PATH" HOME="$T/home" "$UP" --config "$T/test.env" --version 0.1.0 --skip-deploy --yes-i-understand </dev/null >"$T/out.txt" 2>&1) || rc=$?
 check "up no tty without TYPESAFE_API_KEY: fails before preflight" '[[ $rc -ne 0 ]] && grep -q "TYPESAFE_API_KEY is not set" "$T/out.txt" && ! grep -q "^az " "$STUB_LOG"'

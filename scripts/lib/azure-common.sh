@@ -113,14 +113,14 @@ load_config() {
 }
 
 apply_defaults() {
-  : "${LOCATION:=norwayeast}"
+  : "${LOCATION:=swedencentral}"
   : "${PERSISTENT_RG:=rg-message-poc-persistent}"
   : "${INGRESS_PIP_NAME:=pip-message-poc-ingress}"
   : "${EPHEMERAL_RG:=rg-message-poc}"
   : "${ACR_NAME:=acrmessagepoc001}"
   : "${AKS_NAME:=aks-message-poc}"
   : "${AKS_NODE_COUNT:=3}"
-  : "${AKS_NODE_VM_SIZE:=Standard_D2s_v5}"
+  : "${AKS_NODE_VM_SIZE:=Standard_D2s_v6}"
   : "${PG_SERVER:=pg-message-poc-001}"
   : "${PG_ADMIN_USER:=pgadmin}"
   : "${PG_TIER:=Burstable}"
@@ -131,8 +131,8 @@ apply_defaults() {
   : "${GOOGLE_CLIENT_ID:=}"
   : "${GHCR_OWNER:=}"
   : "${GITHUB_DEPLOY_PRINCIPAL_ID:=}"
-  : "${STRIMZI_CHART_VERSION:=}"
-  : "${CERT_MANAGER_CHART_VERSION:=}"
+  : "${STRIMZI_CHART_VERSION:=1.3.1}"
+  : "${CERT_MANAGER_CHART_VERSION:=v1.21.3}"
   : "${BACKUP_DIR:=$HOME/message-poc-backups}"
   : "${OPERATOR_IP:=}"
   : "${AZ_SUBSCRIPTION:=}"

@@ -10,9 +10,12 @@ Flexible Server, and Kafka runs inside the cluster through the Strimzi operator.
 (Azure Event Hubs is covered in a short appendix at the end.)
 
 This is a low-traffic proof-of-concept setup, not a highly available or hardened
-production architecture. It has not been run end to end against an Azure
-subscription. The commands were checked against the repository files. Treat the
-first deployment as a learning run and check each step's output.
+production architecture. The scripted path below has been used once against a
+real Pay-As-You-Go subscription (Sweden Central, Azure CLI 2.93, Helm 4.3,
+Strimzi 1.3.1, cert-manager v1.21.3). That first run needed several reruns, and
+the fixes are in the scripts and this guide, but the fixed scripts have not yet
+had a single clean run from an empty subscription. The manual steps follow the
+same commands, but have not been run on their own, so check each step's output.
 
 ## What the repository already provides
 
@@ -59,7 +62,8 @@ The environment is split into two resource groups:
 
 Both scripts are written for Bash 3.2, so they run with the macOS default shell.
 They need `az`, `kubectl`, Helm, `psql`, `openssl`, `curl` and `git`, plus
-`pg_dump` and `pg_restore` for backups. `gh` and `dig` are optional.
+`pg_dump` and `pg_restore` for backups. `gh` and `dig` are optional. On macOS,
+`brew install azure-cli` installs `az`.
 
 **One-time setup.**
 
@@ -127,19 +131,49 @@ scripts only on a machine you trust.
 Billing starts when the resources exist, even if a script fails halfway. If you
 forget to tear down, the running cost adds up to about $350 to $400 per month.
 
-**Limitations.** The scripts have been tested with stubbed CLIs only. The author
-has not run them against a real Azure subscription end to end, so read the
-output of the first run closely. The manual guide below stays valid and explains
-what each script step does. The scripts do not change any GitHub setting; see
+**Region and VM size.** Before it creates anything, `azure-up.sh` checks that
+`AKS_NODE_VM_SIZE` is offered to your subscription in `LOCATION` and that the
+VM family has enough vCPU quota for `AKS_NODE_COUNT` nodes. New Pay-As-You-Go
+subscriptions are not offered VMs in every region: in testing, `norwayeast` and
+`northeurope` returned `NotAvailableForSubscription` for every small D-series size,
+and the `DSv5` family had a quota of 0 everywhere. The defaults are therefore
+`swedencentral` and `Standard_D2s_v6` (2 vCPU, 8 GB). To check another region
+yourself:
+
+```bash
+az vm list-skus -l <region> --size Standard_D2s_v6 --all \
+  --query "[0].{family:family, blocked:restrictions[?type=='Location'].reasonCode}" -o json
+az vm list-usage -l <region> -o table | grep -iE "Total Regional|Dsv6"
+```
+
+`list-usage` returns nothing until the `Microsoft.Compute` provider is
+registered (`az provider register --namespace Microsoft.Compute --wait`, free).
+
+**Reruns.** The scripts are safe to rerun after a failure. On a rerun,
+`azure-up.sh` reuses what exists and skips slow steps that are already done:
+PostgreSQL firewall rules, images already in the registry, and the Strimzi and
+cert-manager releases when they are installed at the pinned chart versions
+(`STRIMZI_CHART_VERSION`, `CERT_MANAGER_CHART_VERSION`). It still resets the
+PostgreSQL admin password, because that password is generated per run and never
+stored.
+
+**Manifests from the release tag.** `azure-up.sh` renders `deploy/` from the
+release tag it deploys, so a fix to the manifests takes effect with the next
+release. To deploy manifest changes that are not released yet, add
+`--manifests-from-worktree`; the images are still the release's. The summary
+shows which source is used.
+
+**Limitations.** The manual guide below explains what each script step does. The scripts do not change any GitHub setting; see
 [CI, releases and deployment](ci-cd.md) for how they interact with the deploy
 workflow.
 
 ## 1. Prerequisites
 
 - An Azure subscription where you can create resource groups, AKS, ACR,
-  PostgreSQL, and (for the appendix only) Event Hubs. Check that the region has
-  quota for three `Standard_D2s_v5` nodes.
-- Azure CLI (`az`), `kubectl`, and Helm 3. `psql` is needed for the database
+  PostgreSQL, and (for the appendix only) Event Hubs. Check that the region
+  offers the node size to your subscription and has quota for three nodes
+  (see "Region and VM size" above).
+- Azure CLI (`az`, tested with 2.93), `kubectl`, and Helm 3 or 4. `psql` is needed for the database
   step, and Docker is optional (the guide uses `az acr build`).
 - A clone of this repository, with the current directory set to its root.
 - A TypeSafe API key for Jev (`TYPESAFE_API_KEY`).
@@ -158,7 +192,7 @@ globally unique names for ACR and PostgreSQL. Replace the example values.
 
 ```bash
 export RESOURCE_GROUP=rg-message-poc
-export LOCATION=norwayeast
+export LOCATION=swedencentral
 export PERSISTENT_RG=rg-message-poc-persistent   # holds only the static ingress IP (step 7)
 export INGRESS_PIP_NAME=pip-message-poc-ingress
 export ACR_NAME=acrmessagepoc001          # globally unique, lowercase letters and digits
@@ -232,7 +266,7 @@ the pod anti-affinity can place one Kafka broker per node.
 ```bash
 az aks create -g "$RESOURCE_GROUP" -n "$AKS_NAME" -l "$LOCATION" \
   --node-count 3 \
-  --node-vm-size Standard_D2s_v5 \
+  --node-vm-size Standard_D2s_v6 \
   --generate-ssh-keys \
   --attach-acr "$ACR_NAME" \
   --enable-app-routing
@@ -279,8 +313,8 @@ AKS_OUTBOUND_IP_ID=$(az aks show -g "$RESOURCE_GROUP" -n "$AKS_NAME" \
   --query "networkProfile.loadBalancerProfile.effectiveOutboundIps[0].id" -o tsv)
 AKS_OUTBOUND_IP=$(az network public-ip show --ids "$AKS_OUTBOUND_IP_ID" --query ipAddress -o tsv)
 
-az postgres flexible-server firewall-rule create -g "$RESOURCE_GROUP" -n "$PG_SERVER" \
-  --rule-name aks-egress \
+az postgres flexible-server firewall-rule create -g "$RESOURCE_GROUP" --server-name "$PG_SERVER" \
+  --name aks-egress \
   --start-ip-address "$AKS_OUTBOUND_IP" \
   --end-ip-address "$AKS_OUTBOUND_IP"
 ```
@@ -295,6 +329,10 @@ psql "host=${PG_SERVER}.postgres.database.azure.com port=5432 dbname=postgres us
 CREATE ROLE message_poc LOGIN PASSWORD '${DB_PASSWORD}';
 CREATE DATABASE message_poc OWNER message_poc;
 SQL
+# On Azure the public schema belongs to azure_pg_admin, not to the database owner.
+# Without this, Flyway fails with "permission denied for schema public".
+psql "host=${PG_SERVER}.postgres.database.azure.com port=5432 dbname=message_poc user=${PG_ADMIN_USER} sslmode=require" \
+  -c 'ALTER SCHEMA public OWNER TO message_poc'
 unset PGPASSWORD
 ```
 
@@ -327,14 +365,16 @@ Here you install only the operator, once per cluster:
 ```bash
 kubectl create namespace strimzi
 helm install strimzi-cluster-operator oci://quay.io/strimzi-helm/strimzi-kafka-operator \
-  --namespace strimzi --set watchAnyNamespace=true
+  --namespace strimzi --set watchAnyNamespace=true --version 1.3.1
 kubectl -n strimzi get pods
 ```
 
-`kubectl -n strimzi get pods` should show the operator `Running`. Check that
-the Kafka `version` in `deploy/kubernetes/kafka/kafka.yaml` (4.3.1, as in
-`compose.yaml`) is supported by the installed operator release. If the operator
-rejects it, set a version from that release's supported list.
+`kubectl -n strimzi get pods` should show the operator `Running`. Pin the chart
+version. The manifests in `deploy/kubernetes/kafka` use the `kafka.strimzi.io/v1`
+API, which Strimzi 1.x serves (it no longer serves `v1beta2`), and Kafka 4.3.1 (as
+in `compose.yaml`), which Strimzi 1.3.1 supports. Before you change the chart
+version, check that the release still serves `v1` and supports that Kafka
+`version`.
 
 The broker listens inside the cluster without TLS or SASL. The base ConfigMap
 already sets `PLAINTEXT` and the bootstrap address
@@ -368,8 +408,13 @@ helm repo add jetstack https://charts.jetstack.io
 helm repo update
 helm install cert-manager jetstack/cert-manager \
   --namespace cert-manager --create-namespace \
-  --set crds.enabled=true
+  --set crds.enabled=true --version v1.21.3
 ```
+
+On AKS, the admissions enforcer adds a `namespaceSelector` to the cert-manager
+webhook configurations. A later `helm upgrade` with Helm 4 (server-side apply)
+then fails with `conflict with "admissionsenforcer"`. Add `--force-conflicts` to
+the upgrade; the enforcer adds its selector again afterwards.
 
 Wait until the cert-manager pods are `Running` (`kubectl -n cert-manager get pods`). Set the ACME contact email in `deploy/azure/cluster-issuer.yaml`, then apply it.
 It is a cluster-scoped resource, so it is applied on its own and is not part of
@@ -795,9 +840,25 @@ Do not create the Secret by hand after you enable this.
   `CORS_ALLOWED_ORIGINS` is empty. If you see them, check that
   `MESSAGE_API_BASE_URL` is empty in the overlay's effective ConfigMap
   (`kubectl -n "$NAMESPACE" get configmap message-poc-config -o yaml`).
-- **Flyway failures in `message-persistence`:** usually the role does not own
+- **Flyway fails with `permission denied for schema public`:** on Azure the
+  `public` schema belongs to `azure_pg_admin`, not to the database owner. Run
+  `ALTER SCHEMA public OWNER TO message_poc` as the admin user in the
+  `message_poc` database (step 5; `azure-up.sh` does it for you), then restart
+  `message-persistence`.
+- **Other Flyway failures in `message-persistence`:** usually the role does not own
   the database, or the connection failed. Check the logs for the error, then
   confirm with `psql` that `message_poc` owns `message_poc`.
+- **`no matches for kind "Kafka" in version "kafka.strimzi.io/v1beta2"`:** the
+  manifests are older than the installed Strimzi, which serves only `v1`. Deploy
+  a release whose `deploy/kubernetes/kafka` uses `kafka.strimzi.io/v1`, or use
+  `azure-up.sh --manifests-from-worktree` with an up-to-date checkout.
+- **`az` rejects arguments (`unrecognized arguments`):** the Azure CLI changes
+  flags between versions. For example, `postgres flexible-server firewall-rule`
+  now takes `--server-name` for the server and `--name` for the rule. Compare
+  with `az <command> --help`.
+- **`NotAvailableForSubscription` or a quota error when the cluster is created:**
+  the node size is not offered in the region, or the family quota is too small.
+  See "Region and VM size" above.
 - **Kafka connection errors or `Topic ... not present`:** check
   `kubectl -n "$NAMESPACE" get kafka,kafkatopic`. If the `Kafka` resource does not
   become ready, check the operator logs (`kubectl -n strimzi logs deploy/strimzi-cluster-operator`)
