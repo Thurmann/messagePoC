@@ -15,6 +15,7 @@ HOST API_HOST ACME_EMAIL ADMIN_EMAILS"
 
 TAG_PROJECT="project=message-poc"
 TAG_MANAGED="managed-by=message-poc-scripts"
+TLS_BACKUP_NAME="message-poc-tls-secret.yaml"
 
 CURRENT_STEP=""
 MUTATION_STARTED=false
@@ -235,6 +236,21 @@ provider_states() {
       PROVIDERS_TO_REGISTER="$PROVIDERS_TO_REGISTER $ns"
     fi
   done
+}
+
+# Prints true or false; fails when the group exists with the wrong lifecycle tag.
+check_group() {
+  local rg="$1" lifecycle="$2" exists tag
+  exists="$(az group exists --name "$rg" --output tsv 2>/dev/null || true)"
+  if [[ "$exists" != true ]]; then
+    printf 'false'
+    return 0
+  fi
+  tag="$(az group show --name "$rg" --query 'tags.lifecycle' --output tsv 2>/dev/null || true)"
+  if [[ "$tag" != "$lifecycle" ]]; then
+    fail "resource group $rg exists but its lifecycle tag is '${tag:-missing}', expected '$lifecycle'; the scripts only manage groups they created"
+  fi
+  printf 'true'
 }
 
 k() { kubectl --context "$AKS_NAME" "$@"; }

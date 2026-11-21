@@ -18,7 +18,6 @@ NO_RESTORE_TLS=false
 RESTORE_DB=""
 VERSION=""
 SERVICES="message-api validation-service message-persistence message-audit"
-TLS_BACKUP_NAME="message-poc-tls-secret.yaml"
 START_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 # --with-loki is a flag; keep a copy so the config file cannot override it.
@@ -188,20 +187,6 @@ render_issuers() {
 }
 
 # --- read-only preflight ------------------------------------------------------------------
-
-check_group() {
-  local rg="$1" lifecycle="$2" exists tag
-  exists="$(az group exists --name "$rg" --output tsv 2>/dev/null || true)"
-  if [[ "$exists" != true ]]; then
-    printf 'false'
-    return 0
-  fi
-  tag="$(az group show --name "$rg" --query 'tags.lifecycle' --output tsv 2>/dev/null || true)"
-  if [[ "$tag" != "$lifecycle" ]]; then
-    fail "resource group $rg exists but its lifecycle tag is '${tag:-missing}', expected '$lifecycle'; the scripts only manage groups they created"
-  fi
-  printf 'true'
-}
 
 preflight() {
   local out usage free want
