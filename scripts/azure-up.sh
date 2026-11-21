@@ -195,8 +195,8 @@ preflight() {
   az_preflight
   provider_states
 
-  PERSISTENT_EXISTS="$(check_group "$PERSISTENT_RG" persistent)"
-  EPHEMERAL_EXISTS="$(check_group "$EPHEMERAL_RG" ephemeral)"
+  PERSISTENT_EXISTS="$(check_group "$PERSISTENT_RG" persistent refuse-deleting)"
+  EPHEMERAL_EXISTS="$(check_group "$EPHEMERAL_RG" ephemeral refuse-deleting)"
 
   PIP_EXISTS=false
   PIP_IP=""
@@ -226,9 +226,11 @@ preflight() {
       PG_STATE="$out"
     fi
   fi
-  if [[ "$AKS_PROV" == Failed ]]; then
-    fail "AKS cluster $AKS_NAME is in a Failed state; run ./scripts/azure-down.sh and start again"
-  fi
+  case "$AKS_PROV" in
+    Failed | Deleting | Canceled)
+      fail "AKS cluster $AKS_NAME is in the state $AKS_PROV; run ./scripts/azure-down.sh (wait for a running deletion to finish first) and start again"
+      ;;
+  esac
 
   if [[ "$ACR_EXISTS" != true ]]; then
     out="$(az acr check-name --name "$ACR_NAME" --query nameAvailable --output tsv 2>/dev/null || true)"
@@ -290,6 +292,10 @@ print_up_summary() {
   log "Signed in as : $AZ_USER"
   log "Region       : $LOCATION"
   log "Version      : $VERSION$("$SKIP_DEPLOY" && printf ' (application deployment skipped)')"
+  log "Host         : $HOST"
+  log "API host     : $API_HOST"
+  log "Admin emails : $ADMIN_EMAILS"
+  log "ACME email   : $ACME_EMAIL"
   log ""
   log "PERSISTENT resource group: $PERSISTENT_RG  $(tag_label "$PERSISTENT_EXISTS")"
   log "  - Public IP $INGRESS_PIP_NAME  $(tag_label "$PIP_EXISTS")"
@@ -628,7 +634,8 @@ restore_tls() {
   crt="$(awk '$1 == "tls.crt:" { print $2 }' "$file" | base64 --decode 2>/dev/null || true)"
   if [[ -n "$crt" ]] &&
     printf '%s\n' "$crt" | openssl x509 -noout -checkend 604800 >/dev/null 2>&1 &&
-    printf '%s\n' "$crt" | openssl x509 -noout -text 2>/dev/null | grep -q "DNS:${HOST}"; then
+    printf '%s\n' "$crt" | openssl x509 -noout -text 2>/dev/null | grep -qF "DNS:${HOST}" &&
+    printf '%s\n' "$crt" | openssl x509 -noout -text 2>/dev/null | grep -qF "DNS:${API_HOST}"; then
     log "Restoring the saved certificate from $file"
     k -n "$NAMESPACE" apply -f "$file"
   else
@@ -655,6 +662,11 @@ import_images() {
   if [[ -z "$token" ]] && command -v gh >/dev/null 2>&1; then
     token="$(gh auth token 2>/dev/null || true)"
     user="$(gh api user -q .login 2>/dev/null || true)"
+  elif [[ -n "$token" && -z "$user" ]] && command -v gh >/dev/null 2>&1; then
+    user="$(gh api user -q .login 2>/dev/null || true)"
+  fi
+  if [[ -n "$token" && -z "$user" ]]; then
+    fail "a GitHub token is available but no username; set GHCR_USERNAME (not importing anonymously)"
   fi
   if [[ -n "$token" && -n "$user" ]]; then
     auth=(--username "$user" --password "$token")
@@ -754,6 +766,9 @@ if [[ -n "$RESTORE_DB" ]]; then
 fi
 if ! "$DRY_RUN"; then
   require_confirmation_possible
+  if [[ -z "${TYPESAFE_API_KEY:-}" ]] && ! interactive_ok; then
+    fail "TYPESAFE_API_KEY is not set and there is no terminal to ask for it; export it"
+  fi
 fi
 
 section "Resolving the version to deploy"

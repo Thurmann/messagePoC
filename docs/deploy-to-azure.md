@@ -111,6 +111,11 @@ off). For test runs, use `./scripts/azure-up.sh --staging-cert`; browsers warn
 about the staging certificate. `--with-loki` also deploys Loki and Alloy for the
 audit panel (step 11).
 
+**Secrets on the command line.** The generated PostgreSQL admin password and the
+GHCR token are passed to `az` as command-line arguments, so they are visible in
+the local process list (for example with `ps`) while those commands run. Run the
+scripts only on a machine you trust.
+
 **Costs** (approximate, check the Azure pricing calculator for your region):
 
 | State | Cost |
@@ -384,7 +389,8 @@ resource group and point the managed controller at it. Create the group and the
 IP:
 
 ```bash
-az group create -n "$PERSISTENT_RG" -l "$LOCATION"
+az group create -n "$PERSISTENT_RG" -l "$LOCATION" \
+  --tags project=message-poc managed-by=message-poc-scripts lifecycle=persistent
 az network public-ip create -g "$PERSISTENT_RG" -n "$INGRESS_PIP_NAME" -l "$LOCATION"   --sku Standard --allocation-method Static --version IPv4
 export INGRESS_IP=$(az network public-ip show -g "$PERSISTENT_RG" -n "$INGRESS_PIP_NAME" \
   --query ipAddress -o tsv)
@@ -572,8 +578,7 @@ kubectl -n "$NAMESPACE" apply -f deploy/azure/loki/loki.yaml
 
 The Alloy configuration keeps only the four application pods and sets the
 `service` label from the `app` label. The audit query depends on that label. It
-discovers pods in the namespace `message-poc`; edit `names` in
-`deploy/azure/loki/kubernetes.alloy` if you use another namespace.
+discovers pods in the namespace Alloy runs in (`own_namespace = true`).
 
 Install Alloy with Helm. Run it as a single Deployment. `loki.source.kubernetes`
 reads logs through the API, so several replicas would send duplicates. The
