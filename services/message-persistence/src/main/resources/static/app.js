@@ -7,6 +7,7 @@
     config: { googleClientId: '', messageApiBaseUrl: '' },
     token: null,
     me: null,
+    gisReady: false,     // Google sign-in loaded and its button rendered
     seen: new Map(),      // messageId -> { type, el }
     pending: new Map(),   // messageId -> { text, el }
     cards: new Map(),     // messageId -> element
@@ -19,7 +20,7 @@
 
   var $ = function (id) { return document.getElementById(id); };
   var els = {};
-  ['tabs', 'tab-chat', 'tab-log', 'conn', 'me', 'me-handle', 'signout', 'gsi-button', 'setup', 'warn-banner',
+  ['tabs', 'tab-chat', 'tab-log', 'conn', 'me', 'me-handle', 'signout', 'login', 'gsi-button', 'setup', 'warn-banner',
     'ban-banner', 'view-chat', 'view-log', 'lines', 'send-error', 'composer', 'text', 'send', 'rail', 'cards',
     'rail-empty', 'audit-btn', 'audit', 'log-body', 'handle-dialog', 'handle-form', 'handle-input',
     'handle-error', 'handle-cancel', 'handle-save'].forEach(function (id) { els[id] = $(id); });
@@ -274,7 +275,7 @@
     var me = state.me;
     var signed = !!(state.token && me);
     show(els.me, signed);
-    show(els['gsi-button'], !signed && !!state.config.googleClientId);
+    show(els.login, !signed && state.gisReady);
     if (signed) els['me-handle'].textContent = me.handle ? '@' + me.handle : me.email;
 
     // banners
@@ -542,6 +543,7 @@
         client_id: state.config.googleClientId, callback: onCredential, auto_select: true,
       });
       google.accounts.id.renderButton(els['gsi-button'], { theme: 'outline', size: 'medium', type: 'standard' });
+      state.gisReady = true;
     } catch (e) {
       els.setup.textContent = 'Could not load Google sign-in.';
       show(els.setup, true);
