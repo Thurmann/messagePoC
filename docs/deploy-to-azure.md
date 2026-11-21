@@ -38,6 +38,97 @@ first deployment as a learning run and check each step's output.
   and the optional `SPRING_KAFKA_PROPERTIES_SASL_JAAS_CONFIG` (all four, only needed for
   managed Kafka).
 
+## Scripted showcase (recommended for occasional demos)
+
+If you only need the environment for a few hours at a time, do not keep it
+running. Two scripts create and delete it:
+
+- [`scripts/azure-up.sh`](../scripts/azure-up.sh) creates everything and deploys a
+  released version (about 20 to 30 minutes).
+- [`scripts/azure-down.sh`](../scripts/azure-down.sh) deletes it again, after an
+  optional database backup.
+
+The environment is split into two resource groups:
+
+- The **persistent** group (`PERSISTENT_RG`) holds only one resource, the
+  static public IP of the ingress. It survives `azure-down.sh`, so the DNS
+  records and the Google origin stay valid between showcases.
+- The **ephemeral** group (`EPHEMERAL_RG`) holds the container registry, the AKS
+  cluster (with its node resource group) and PostgreSQL. `azure-down.sh` deletes
+  it, and `azure-up.sh` creates it again.
+
+Both scripts are written for Bash 3.2, so they run with the macOS default shell.
+They need `az`, `kubectl`, Helm, `psql`, `openssl`, `curl` and `git`, plus
+`pg_dump` and `pg_restore` for backups. `gh` and `dig` are optional.
+
+**One-time setup.**
+
+1. Sign in and select the subscription: `az login`, then
+   `az account set --subscription "<subscription-name-or-id>"`.
+2. Copy the settings file and fill in the values. The file is ignored by Git.
+   Environment variables with the same names override it, and it must not contain
+   secrets (the scripts reject `TYPESAFE_API_KEY`, `DB_PASSWORD` and similar keys):
+
+   ```bash
+   cp scripts/azure.env.example scripts/azure.env
+   ```
+
+   Set at least `AZ_SUBSCRIPTION`, `HOST`, `API_HOST`, `ACME_EMAIL` and
+   `ADMIN_EMAILS`. The ACR and PostgreSQL names must be globally unique.
+3. Run `./scripts/azure-up.sh --dry-run` to see the checks and the plan without
+   changing anything. Then run `./scripts/azure-up.sh`. The first run reserves
+   the static IP and prints it. The script asks for `TYPESAFE_API_KEY` unless it
+   is exported.
+4. In the Vercel DNS dashboard, create **A** records for `HOST` and `API_HOST`
+   that point at the printed static IP (step 8). You set them once.
+5. Add `https://<HOST>` as an authorized JavaScript origin of the Google OAuth
+   client (step 12).
+
+**Each showcase.**
+
+1. Run `./scripts/azure-up.sh` about 20 to 30 minutes before you need the
+   environment. The script deploys the latest release; use `--version X.Y.Z` to
+   choose one. It ends with the URLs and a reminder to tear down.
+2. Run `./scripts/azure-down.sh` afterwards. It offers a database backup
+   (`--backup` or `--no-backup` to answer in advance) and deletes the ephemeral
+   group. Restore a backup in the next run with `--restore-db FILE`.
+
+**Confirmations.** Before it changes anything, each script prints what it will
+create or delete, what data is lost and what it costs. It then asks twice:
+`Continue? [y/N]`, and you type the name of the ephemeral resource group.
+Anything but `y` stops the script without a change. For automation only,
+`--yes-i-understand` skips both questions. It does not skip the extra
+confirmation of `azure-down.sh --include-persistent`, which deletes the static
+IP as well. After that the IP is released for good, the next run gets a new
+address, and you have to change the DNS records.
+
+**Backups and certificates.** Backups are written outside the repository, by
+default to `~/message-poc-backups` (`--backup-dir` or `BACKUP_DIR` change it).
+`azure-down.sh` also saves the TLS Secret, and `azure-up.sh` reuses it when it
+is still valid for at least seven days, so that repeated showcases do not hit
+the Let's Encrypt rate limits (`--no-save-tls` and `--no-restore-tls` turn this
+off). For test runs, use `./scripts/azure-up.sh --staging-cert`; browsers warn
+about the staging certificate. `--with-loki` also deploys Loki and Alloy for the
+audit panel (step 11).
+
+**Costs** (approximate, check the Azure pricing calculator for your region):
+
+| State | Cost |
+| --- | --- |
+| Running | about $11 to $13 per day, or about $0.50 per hour |
+| Idle (only the persistent group) | about $0.12 per day for the static IP |
+| One 6-hour showcase, including setup and teardown | about $3 to $4 |
+
+Billing starts when the resources exist, even if a script fails halfway. If you
+forget to tear down, the running cost adds up to about $350 to $400 per month.
+
+**Limitations.** The scripts have been tested with stubbed CLIs only. The author
+has not run them against a real Azure subscription end to end, so read the
+output of the first run closely. The manual guide below stays valid and explains
+what each script step does. The scripts do not change any GitHub setting; see
+[CI, releases and deployment](ci-cd.md) for how they interact with the deploy
+workflow.
+
 ## 1. Prerequisites
 
 - An Azure subscription where you can create resource groups, AKS, ACR,
@@ -63,6 +154,8 @@ globally unique names for ACR and PostgreSQL. Replace the example values.
 ```bash
 export RESOURCE_GROUP=rg-message-poc
 export LOCATION=norwayeast
+export PERSISTENT_RG=rg-message-poc-persistent   # holds only the static ingress IP (step 7)
+export INGRESS_PIP_NAME=pip-message-poc-ingress
 export ACR_NAME=acrmessagepoc001          # globally unique, lowercase letters and digits
 export AKS_NAME=aks-message-poc
 export PG_SERVER=pg-message-poc-001       # globally unique
@@ -284,24 +377,83 @@ kubectl apply -f deploy/azure/cluster-issuer.yaml
 The overlay adds `cert-manager.io/cluster-issuer: letsencrypt-prod`, so
 cert-manager creates `message-poc-tls` after the hosts resolve (step 8).
 
-**Public IP.** Read the external IP of the managed controller:
+**Public IP.** By default Azure allocates the ingress IP in the AKS node
+resource group, so it is lost when the cluster is deleted. To keep one address
+across clusters (the scripts do this), reserve a static IP in a separate
+resource group and point the managed controller at it. Create the group and the
+IP:
+
+```bash
+az group create -n "$PERSISTENT_RG" -l "$LOCATION"
+az network public-ip create -g "$PERSISTENT_RG" -n "$INGRESS_PIP_NAME" -l "$LOCATION"   --sku Standard --allocation-method Static --version IPv4
+export INGRESS_IP=$(az network public-ip show -g "$PERSISTENT_RG" -n "$INGRESS_PIP_NAME" \
+  --query ipAddress -o tsv)
+echo "$INGRESS_IP"
+```
+
+The identity of the AKS cluster needs the **Network Contributor** role on that
+resource group, so that the load balancer can use an IP outside the node
+resource group:
+
+```bash
+AKS_PRINCIPAL_ID=$(az aks show -g "$RESOURCE_GROUP" -n "$AKS_NAME" --query identity.principalId -o tsv)
+az role assignment create --assignee-object-id "$AKS_PRINCIPAL_ID" \
+  --assignee-principal-type ServicePrincipal --role "Network Contributor" \
+  --scope "$(az group show -n "$PERSISTENT_RG" --query id -o tsv)"
+```
+
+Role assignments can take a few minutes to take effect. Then change the add-on's
+default controller, the `NginxIngressController` named `default`, to use the IP.
+Its ingress class stays `webapprouting.kubernetes.azure.com`, so nothing else
+changes. If the resource does not exist yet, wait a minute and retry. Newer
+Azure CLI versions can switch the default controller to annotation control with
+`az aks approuting update --nginx AnnotationControlled`; the scripts do this when
+the CLI supports it.
+
+```bash
+kubectl patch nginxingresscontroller default --type merge -p "$(cat <<EOF
+{"spec":{"loadBalancerAnnotations":{
+  "service.beta.kubernetes.io/azure-pip-name":"${INGRESS_PIP_NAME}",
+  "service.beta.kubernetes.io/azure-load-balancer-resource-group":"${PERSISTENT_RG}"}}}
+EOF
+)"
+```
+
+The patch is the same as this resource:
+
+```yaml
+apiVersion: approuting.kubernetes.azure.com/v1alpha1
+kind: NginxIngressController
+metadata:
+  name: default
+spec:
+  ingressClassName: webapprouting.kubernetes.azure.com
+  controllerNamePrefix: nginx
+  loadBalancerAnnotations:
+    service.beta.kubernetes.io/azure-pip-name: "<INGRESS_PIP_NAME>"
+    service.beta.kubernetes.io/azure-load-balancer-resource-group: "<PERSISTENT_RG>"
+```
+
+Check that the controller service took the IP (it can take a few minutes):
 
 ```bash
 kubectl get svc -n app-routing-system nginx \
   -o jsonpath='{.status.loadBalancer.ingress[0].ip}{"\n"}'
 ```
 
-If the service name differs in your cluster, run `kubectl get svc -n app-routing-system`
-and use the service that has an external IP. Azure allocates this IP, and it
-can change if the service is recreated. To keep it stable, reserve a static
-public IP in the AKS node resource group and reference it in the controller
-configuration. Azure's application routing documentation describes that
-setting.
+The output must equal `$INGRESS_IP`. If it does not, run
+`kubectl -n app-routing-system describe svc nginx`. `AuthorizationFailed` for
+`publicIPAddresses/join/action` means that the role is still taking effect. If you
+skip the static IP, the same `kubectl get svc` command shows the IP that Azure
+allocated, which can change if the service is recreated.
 
 ## 8. Point DNS at the cluster
 
 Keep Vercel as the DNS provider, as in the GCP guide. Add two **A** records
-that point at the IP from step 7. Replace the example domain and IP:
+that point at the static IP from step 7 (`$INGRESS_IP`, which `azure-up.sh` prints
+on its first run). The IP belongs to the persistent resource group, so you set the
+records once and they stay valid when the cluster is deleted and created again.
+Replace the example domain and IP:
 
 | Type | Name | Value |
 | --- | --- | --- |
@@ -400,131 +552,28 @@ Loki API that the endpoint reads.
 The repo's `observability/` stack is local only. `observability/alloy/config.alloy`
 discovers containers through the Docker socket, which does not exist on AKS
 nodes. `observability/loki/config.yml` is reusable as is. This step deploys Loki
-with the repo's config and a new Alloy configuration that reads pod logs
-through the Kubernetes API. The Alloy file is new; it is not in the repo.
+with the repo's config and an Alloy configuration that reads pod logs
+through the Kubernetes API.
 
-Load the repo's Loki config into a ConfigMap and deploy Loki with a persistent
-volume:
+The files are committed in [`deploy/azure/loki`](../deploy/azure/loki):
+`loki.yaml` (a 10Gi PersistentVolumeClaim, a Deployment and a Service) and
+`kubernetes.alloy` (the Alloy configuration). They are not part of the overlay's
+kustomization, because the overlay does not deploy Loki. `azure-up.sh --with-loki`
+applies them for you. To do it by hand, load the repo's Loki config into a
+ConfigMap and apply the Loki manifests:
 
 ```bash
 kubectl -n "$NAMESPACE" create configmap loki-config \
   --from-file=config.yml=observability/loki/config.yml \
   --dry-run=client -o yaml | kubectl apply -f -
 
-cat <<'EOF' | kubectl -n "$NAMESPACE" apply -f -
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: loki-data
-spec:
-  accessModes: ["ReadWriteOnce"]
-  resources:
-    requests:
-      storage: 10Gi
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: loki
-spec:
-  replicas: 1
-  strategy:
-    type: Recreate
-  selector:
-    matchLabels:
-      app: loki
-  template:
-    metadata:
-      labels:
-        app: loki
-    spec:
-      securityContext:
-        fsGroup: 10001
-      containers:
-        - name: loki
-          image: grafana/loki:3.7.0
-          args: ["-config.file=/etc/loki/config.yml"]
-          ports:
-            - name: http
-              containerPort: 3100
-          volumeMounts:
-            - name: config
-              mountPath: /etc/loki
-              readOnly: true
-            - name: data
-              mountPath: /loki
-      volumes:
-        - name: config
-          configMap:
-            name: loki-config
-        - name: data
-          persistentVolumeClaim:
-            claimName: loki-data
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: loki
-spec:
-  selector:
-    app: loki
-  ports:
-    - name: http
-      port: 3100
-      targetPort: http
-EOF
+kubectl -n "$NAMESPACE" apply -f deploy/azure/loki/loki.yaml
 ```
 
-Create the Alloy configuration. It keeps only the four application pods and
-sets the `service` label from the `app` label. The audit query depends on that
-label.
-
-```bash
-cat > observability/alloy/kubernetes.alloy <<'EOF'
-discovery.kubernetes "pods" {
-  role = "pod"
-  namespaces {
-    names = ["message-poc"]
-  }
-}
-
-discovery.relabel "message_poc" {
-  targets = discovery.kubernetes.pods.targets
-
-  rule {
-    source_labels = ["__meta_kubernetes_pod_label_app"]
-    regex         = "message-api|validation-service|message-persistence|message-audit"
-    action        = "keep"
-  }
-
-  rule {
-    source_labels = ["__meta_kubernetes_pod_label_app"]
-    target_label  = "service"
-  }
-
-  rule {
-    source_labels = ["__meta_kubernetes_namespace"]
-    target_label  = "namespace"
-  }
-
-  rule {
-    replacement  = "poc"
-    target_label = "environment"
-  }
-}
-
-loki.source.kubernetes "message_poc" {
-  targets    = discovery.relabel.message_poc.output
-  forward_to = [loki.write.default.receiver]
-}
-
-loki.write "default" {
-  endpoint {
-    url = "http://loki:3100/loki/api/v1/push"
-  }
-}
-EOF
-```
+The Alloy configuration keeps only the four application pods and sets the
+`service` label from the `app` label. The audit query depends on that label. It
+discovers pods in the namespace `message-poc`; edit `names` in
+`deploy/azure/loki/kubernetes.alloy` if you use another namespace.
 
 Install Alloy with Helm. Run it as a single Deployment. `loki.source.kubernetes`
 reads logs through the API, so several replicas would send duplicates. The
@@ -536,7 +585,7 @@ helm repo add grafana https://grafana.github.io/helm-charts
 helm repo update
 helm upgrade --install alloy grafana/alloy -n "$NAMESPACE" \
   --set controller.type=deployment \
-  --set-file alloy.configMap.content=observability/alloy/kubernetes.alloy
+  --set-file alloy.configMap.content=deploy/azure/loki/kubernetes.alloy
 ```
 
 Query Loki from your machine with a port-forward:
@@ -685,7 +734,18 @@ resource group that AKS creates:
 az group delete -n "$RESOURCE_GROUP" --yes --no-wait
 ```
 
-Remove the Vercel DNS records and the Google origin afterwards.
+Remove the Vercel DNS records and the Google origin afterwards. The static IP
+in `$PERSISTENT_RG` is not part of this group; delete it separately
+(`az group delete -n "$PERSISTENT_RG" --yes`) when you no longer need the address.
+
+**Up and down cycle.** With the scripts (see "Scripted showcase" at the top),
+`azure-down.sh` deletes only the ephemeral group, and `azure-up.sh` builds it
+again. The persistent group keeps the static IP (about $0.12 per day), so DNS and
+the Google origin stay as they are. Messages, users and Kafka data are lost with
+the ephemeral group unless you take a database backup (`--backup`) and restore it
+in the next run (`--restore-db`). `azure-down.sh --include-persistent` also deletes
+the static IP; the next `azure-up.sh` then gets a different address and the DNS
+records must change.
 
 ## 15. Optional hardening: Azure Key Vault
 

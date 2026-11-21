@@ -4,7 +4,7 @@ Three GitHub Actions workflows live in `.github/workflows`:
 
 | Workflow | Trigger | What it does |
 | --- | --- | --- |
-| `ci.yml` | Pull requests, pushes to `main`, manual | `./gradlew build` (unit and Testcontainers integration tests), a Docker build of each of the four service images (not pushed), and a `kubectl kustomize` render of `deploy/kubernetes`, `deploy/kubernetes/kafka` and `deploy/azure`. On `main`, it then tags the next version and calls `release.yml` |
+| `ci.yml` | Pull requests, pushes to `main`, manual | `./gradlew build` (unit and Testcontainers integration tests), a Docker build of each of the four service images (not pushed), and a `kubectl kustomize` render of `deploy/kubernetes`, `deploy/kubernetes/kafka` and `deploy/azure`, and the `Azure scripts` job (ShellCheck and the stub-based tests of the Azure up/down scripts, no Azure access). On `main`, it then tags the next version and calls `release.yml` |
 | `release.yml` | Called by `ci.yml`, or tags `v*.*.*` pushed by hand | Builds and tests, pushes the images to GHCR, creates the GitHub release, and deploys stable releases to AKS when deployment is enabled |
 | `deploy.yml` | Called by `release.yml`, or run manually with a version | Imports a released version's images into ACR and applies `deploy/azure` from that release tag to AKS |
 
@@ -108,6 +108,28 @@ in GitHub.
 4. Add the repository variable `DEPLOY_TO_AKS` with the value `true`
    (Settings → Secrets and variables → Actions → Variables). Without it, releases
    are published but not deployed.
+
+**Showcase environments.** If you create and delete the environment with
+[`scripts/azure-up.sh` and `scripts/azure-down.sh`](deploy-to-azure.md), note
+the following:
+
+- The role assignments of the GitHub identity are scoped to the registry and the
+  cluster, which live in the ephemeral resource group, so they vanish with it.
+  `azure-up.sh` grants them again (Contributor on the registry and Cluster User
+  Role on the cluster) when `GITHUB_DEPLOY_PRINCIPAL_ID` is set in
+  `scripts/azure.env` to the object id of the identity. The federated credential
+  and the identity itself are not affected.
+- Keep the environment variables `AZURE_RESOURCE_GROUP`, `AKS_NAME` and
+  `ACR_NAME` equal to `EPHEMERAL_RG`, `AKS_NAME` and `ACR_NAME` in
+  `scripts/azure.env`. The scripts re-create the resources under the same names.
+- Set `DEPLOY_TO_AKS` to `false` between showcases. While the cluster does not
+  exist, a deployment from `main` or from a tag fails. Set it back to `true`
+  after `azure-up.sh` has finished. The scripts only read this variable and
+  warn; they never change GitHub settings.
+- `azure-up.sh` substitutes the overlay placeholders (ACR, PostgreSQL server,
+  hosts, emails) locally when it renders the manifests, so the committed overlay
+  can keep them. `deploy.yml` does not, and still needs real values committed
+  (see above).
 
 To deploy, or roll back to, an existing release, run **Deploy** from the Actions
 tab and enter its version without the `v` (for example `0.1.0`).

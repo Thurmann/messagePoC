@@ -90,11 +90,27 @@ jobs:
             echo "::endgroup::"
           done
 
+  scripts:
+    name: Azure scripts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: azure/setup-kubectl@v5
+
+      # The tests replace az, kubectl, helm and the other CLIs with stubs; nothing reaches Azure.
+      - name: Lint shell scripts
+        run: shellcheck -x scripts/*.sh scripts/lib/*.sh scripts/tests/*.sh
+
+      - name: Test the Azure scripts
+        run: bash scripts/tests/azure-scripts-test.sh
+
   # Tags each green push to main with the next version and releases it. The tag is pushed with
   # GITHUB_TOKEN, which does not trigger release.yml's tag trigger, so it is called directly below.
   tag:
     name: Tag release
-    needs: [build, images, manifests]
+    needs: [build, images, manifests, scripts]
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
