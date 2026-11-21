@@ -69,11 +69,10 @@ workflow does not create these.
 
 It deploys `deploy/azure` as it is at the release tag. The workflow sets the
 image names and tags itself, so the `<your-acr>` placeholders and `newTag` values
-in the overlay are ignored. Any other `<...>` placeholder (such as `<pg-server>`)
-or `example.com` value (the Ingress hosts and `ADMIN_EMAILS`) stops the
-deployment. Commit the real values in `deploy/azure/kustomization.yaml` before
-you tag the release; otherwise a deployment would reset the live Ingress and
-ConfigMap to the committed values.
+in the overlay are ignored. It fills `<pg-server>`, the `example.com` hosts and
+`ADMIN_EMAILS` from the environment variables in step 3. Any `<...>` placeholder
+or `example.com` value left after that stops the deployment, so a deployment
+never resets the live Ingress or ConfigMap to placeholder values.
 
 The workflow signs in to Azure with OpenID Connect, so no Azure secret is stored
 in GitHub.
@@ -81,8 +80,42 @@ in GitHub.
 1. Create an app registration (or a user-assigned managed identity) for GitHub
    Actions, and add a federated credential with:
    - Issuer: `https://token.actions.githubusercontent.com`
-   - Subject: `repo:<owner>/<repo>:environment:production`
+   - Subject: the repository's subject prefix followed by `:environment:production`
+     (see below)
    - Audience: `api://AzureADTokenExchange`
+
+   The subject must match the token exactly. Look up the prefix first:
+
+   ```bash
+   gh api repos/<owner>/<repo>/actions/oidc/customization/sub
+   ```
+
+   If the result has `"use_immutable_subject": true`, GitHub uses the immutable
+   format with the numeric owner and repository IDs, for example
+   `repo:<owner>@<owner-id>/<repo>@<repo-id>:environment:production`. Use the
+   `sub_claim_prefix` from the result. Otherwise the subject is the classic
+   `repo:<owner>/<repo>:environment:production`. With the wrong format,
+   `azure/login` fails with `AADSTS700213: No matching federated identity record
+   found`, and the log prints the subject GitHub actually sent.
+
+   For the scripted showcase, put a user-assigned managed identity in the
+   persistent resource group, so it survives `azure-down.sh` (a managed identity
+   is free):
+
+   ```bash
+   az identity create -g rg-message-poc-persistent -n id-message-poc-github -l <location>
+   az identity federated-credential create \
+     -g rg-message-poc-persistent --identity-name id-message-poc-github \
+     --name github-production \
+     --issuer https://token.actions.githubusercontent.com \
+     --subject "<sub_claim_prefix>:environment:production" \
+     --audiences api://AzureADTokenExchange
+   az identity show -g rg-message-poc-persistent -n id-message-poc-github \
+     --query "{clientId:clientId, principalId:principalId}" -o table
+   ```
+
+   `clientId` is `AZURE_CLIENT_ID` in step 3. Set `principalId` as
+   `GITHUB_DEPLOY_PRINCIPAL_ID` in `scripts/azure.env`.
 2. Grant the identity:
    - **Contributor** on the container registry (`az acr import` needs the import action, which `AcrPush` does not include)
    - **Azure Kubernetes Service Cluster User Role** on the AKS cluster. If the
