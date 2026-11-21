@@ -7,7 +7,10 @@ import no.thurmann.messagepoc.contracts.KafkaTopics
 import no.thurmann.messagepoc.contracts.MessageAuthor
 import no.thurmann.messagepoc.contracts.MessageSubmittedEvent
 import no.thurmann.messagepoc.contracts.MessageSubmittedPayload
+import org.apache.kafka.common.KafkaException
+import org.apache.kafka.common.errors.RetriableException
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.dao.DataAccessException
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
@@ -20,8 +23,10 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
+import java.time.Duration
 import java.time.Instant
 import java.util.UUID
+import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit
 
 @RestController
@@ -29,6 +34,7 @@ import java.util.concurrent.TimeUnit
 class MessageController(
     private val kafkaTemplate: KafkaTemplate<String, Any>,
     private val userStatusLookup: UserStatusLookup,
+    @Value("\${message-api.kafka-send-timeout:5s}") private val sendTimeout: Duration,
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -40,6 +46,13 @@ class MessageController(
     ): ResponseEntity<*> {
         val now = Instant.now()
         val subject = jwt.subject ?: return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build<Nothing>()
+        val clientMessageId = request.messageId?.takeIf { it.isNotBlank() }
+        val messageId = if (clientMessageId == null) {
+            UUID.randomUUID()
+        } else {
+            clientMessageId.toUuidOrNull()
+                ?: return ResponseEntity.badRequest().body(mapOf("error" to "INVALID_MESSAGE_ID"))
+        }
         val status = try {
             userStatusLookup.find(subject, now)
         } catch (e: DataAccessException) {
@@ -66,7 +79,6 @@ class MessageController(
                     )
         }
 
-        val messageId = UUID.randomUUID()
         val correlationId = correlationIdHeader.toUuidOrNull() ?: UUID.randomUUID()
         val event = MessageSubmittedEvent(
             eventId = UUID.randomUUID(),
@@ -78,9 +90,21 @@ class MessageController(
             author = MessageAuthor(userId = subject, handle = handle),
         )
 
-        val sendResult = kafkaTemplate
-            .send(KafkaTopics.MESSAGE_SUBMITTED, messageId.toString(), event)
-            .get(5, TimeUnit.SECONDS)
+        val sendResult = try {
+            kafkaTemplate
+                .send(KafkaTopics.MESSAGE_SUBMITTED, messageId.toString(), event)
+                .get(sendTimeout.toMillis(), TimeUnit.MILLISECONDS)
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            return unconfirmed(messageId, correlationId, e)
+        } catch (e: java.util.concurrent.TimeoutException) {
+            return unconfirmed(messageId, correlationId, e)
+        } catch (e: Exception) {
+            if ((e is ExecutionException || e is KafkaException) && e.hasUnknownOutcomeCause()) {
+                return unconfirmed(messageId, correlationId, e)
+            }
+            throw e
+        }
 
         logger.atInfo()
             .addKeyValue("eventId", event.eventId)
@@ -102,12 +126,36 @@ class MessageController(
             ),
         )
     }
+
+    /** The producer may still deliver the record in the background, so the outcome is unknown, not failed. */
+    private fun unconfirmed(messageId: UUID, correlationId: UUID, e: Exception): ResponseEntity<*> {
+        logger.atWarn()
+            .addKeyValue("messageId", messageId)
+            .addKeyValue("correlationId", correlationId)
+            .addKeyValue("exception", e.javaClass.name)
+            .log("Kafka send outcome unconfirmed")
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+            .header(HttpHeaders.RETRY_AFTER, "5")
+            .body(SubmitMessageUnconfirmed(messageId = messageId, correlationId = correlationId))
+    }
 }
+
+private fun Throwable.hasUnknownOutcomeCause(): Boolean =
+    generateSequence(this) { it.cause?.takeIf { c -> c !== it } }
+        .take(20)
+        .any { it is RetriableException || it is org.apache.kafka.common.errors.TimeoutException }
+
+data class SubmitMessageUnconfirmed(
+    val messageId: UUID,
+    val correlationId: UUID,
+    val status: SubmissionStatus = SubmissionStatus.UNCONFIRMED,
+)
 
 data class SubmitMessageRequest(
     @field:NotBlank
     @field:Size(max = 500)
     val text: String,
+    val messageId: String? = null,
 )
 
 data class SubmitMessageResponse(
@@ -118,6 +166,7 @@ data class SubmitMessageResponse(
 
 enum class SubmissionStatus {
     PENDING,
+    UNCONFIRMED,
 }
 
 private fun String?.toUuidOrNull(): UUID? =
