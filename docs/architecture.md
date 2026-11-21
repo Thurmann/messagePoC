@@ -106,8 +106,8 @@ poc.messages.submitted.v1-dlt -> message-persistence (DltListener)
                                       |
                                       v
                        ModerationService (one DB transaction)
-                         - lock on the messageId, skip if the eventId or messageId is already stored
                          - lock app_user row (SELECT ... FOR UPDATE)
+                         - lock on the messageId; skip if the eventId or messageId is already stored
                          - insert message_result row
                          - count strikes; create user_ban if the ban threshold is reached
                          - SELECT pg_notify('chat_events', messageId)
