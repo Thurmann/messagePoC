@@ -16,7 +16,12 @@
     banUntil: 0,
     tokenTimer: null,
     renewal: null,
+    kafka: 'UNKNOWN',     // 'UNKNOWN' | 'UP' | 'DOWN'
+    kafkaVer: 0,
+    sse: null,            // null until the first connection result
+    lastFailed: null,     // { text, messageId } of the last message dropped with a known failure
   };
+  var MAX_ATTEMPTS = 6;
 
   var $ = function (id) { return document.getElementById(id); };
   var els = {};
@@ -82,13 +87,34 @@
   }
   function systemLine(text) { return el('div', 'line sys', text); }
 
+  function newMessageId() {
+    var c = window.crypto;
+    if (c && typeof c.randomUUID === 'function') return c.randomUUID();
+    var b = new Uint8Array(16);
+    if (c && c.getRandomValues) c.getRandomValues(b);
+    else for (var i = 0; i < 16; i++) b[i] = Math.floor(Math.random() * 256);
+    b[6] = (b[6] & 0x0f) | 0x40;
+    b[8] = (b[8] & 0x3f) | 0x80;
+    var h = [];
+    for (var j = 0; j < 16; j++) h.push((b[j] + 256).toString(16).slice(1));
+    return h.slice(0, 4).join('') + '-' + h.slice(4, 6).join('') + '-' + h.slice(6, 8).join('') + '-' +
+      h.slice(8, 10).join('') + '-' + h.slice(10).join('');
+  }
+  function setStatus(p, text) {
+    var s = p.el.querySelector('.status');
+    if (!s) { s = el('span', 'status'); p.el.appendChild(s); }
+    s.textContent = text;
+  }
+
   function markPosted(p) {
     p.el.classList.remove('pending');
+    p.el.classList.remove('unconfirmed');
     var s = p.el.querySelector('.status');
     if (s) s.remove();
   }
   function markRemoved(p) {
     p.el.classList.remove('pending');
+    p.el.classList.remove('unconfirmed');
     p.el.classList.add('failed');
     var s = p.el.querySelector('.status');
     if (!s) { s = el('span', 'status'); p.el.appendChild(s); }
@@ -101,6 +127,7 @@
     var pend = state.pending.get(id);
     if (pend) {
       state.pending.delete(id);
+      if (pend.timer) { clearTimeout(pend.timer); pend.timer = null; }
       state.seen.set(id, { type: type, el: pend.el });
       if (type === 'message') markPosted(pend); else { markRemoved(pend); refreshMe(); }
       return;
@@ -173,6 +200,32 @@
     }
     run();
     return function stop() { stopped = true; if (ctrl) ctrl.abort(); };
+  }
+
+  function renderConn() {
+    if (state.sse === null) return;
+    var warn = state.sse && state.kafka === 'DOWN';
+    els.conn.textContent = !state.sse ? 'reconnecting…'
+      : warn ? 'live · sending paused (Kafka unavailable)' : 'live';
+    els.conn.title = !state.sse ? 'Connection to the chat stream lost; reconnecting.'
+      : warn ? 'Live updates work, but the message broker is unavailable. Messages you send are retried until confirmed.'
+        : 'Connected to the live chat stream.';
+    els.conn.classList.toggle('on', !!state.sse && !warn);
+    els.conn.classList.toggle('warn', warn);
+    updateComposer();
+  }
+  function setKafka(status) {
+    state.kafka = status === 'UP' || status === 'DOWN' ? status : 'UNKNOWN';
+    renderConn();
+  }
+  async function loadKafkaStatus() {
+    var ver = state.kafkaVer;
+    try {
+      var res = await fetch('/api/chat/kafka-status', { cache: 'no-store' });
+      if (!res.ok) return;
+      var body = await res.json();
+      if (ver === state.kafkaVer) setKafka(body && body.status); // ignore if a newer stream event arrived meanwhile
+    } catch (e) { /* ignore */ }
   }
 
   async function loadHistory() {
@@ -330,56 +383,97 @@
     els.text.disabled = !ok;
     els.send.disabled = !ok;
     els.text.placeholder = !signed ? 'Sign in to chat' : !me.handle ? 'Choose a handle to chat'
-      : isBanned() ? 'You are temporarily banned' : 'Write a message';
+      : isBanned() ? 'You are temporarily banned'
+      : state.kafka === 'DOWN' ? 'Write a message (sending is paused, messages may be delayed)' : 'Write a message';
   }
 
-  async function sendMessage(text) {
-    setError(els['send-error'], '');
-    var handle = state.me.handle;
-    var line = userLine(handle, text, new Date().toISOString(), 'pending');
-    line.appendChild(el('span', 'status', 'checking…'));
-    appendLine(line);
-    var p = { text: text, el: line };
-    var drop = function () { line.remove(); };
+  function retryDelayMs(res) {
+    var n = parseInt(res && res.headers ? res.headers.get('Retry-After') : '', 10);
+    if (isNaN(n)) n = 5;
+    return Math.min(30, Math.max(3, n)) * 1000;
+  }
+
+  // Outcome unknown (Kafka did not confirm / network error): keep the line and resend with the SAME messageId.
+  function unconfirmed(p, delayMs) {
+    p.el.classList.remove('pending');
+    p.el.classList.add('unconfirmed');
+    if (p.attempts >= MAX_ATTEMPTS) {
+      setStatus(p, 'not confirmed – it may still appear'); // stays pending: a late result still resolves the line
+      return;
+    }
+    setStatus(p, 'not confirmed yet – retrying…');
+    p.timer = setTimeout(function () { p.timer = null; attempt(p); }, delayMs);
+  }
+
+  // Definite failure: nothing was accepted, so drop the line and give the text back.
+  function failMessage(p, message, status, err) {
+    state.pending.delete(p.messageId);
+    if (p.timer) { clearTimeout(p.timer); p.timer = null; }
+    p.el.remove();
+    state.lastFailed = { text: p.text, messageId: p.messageId };
+    if (!els.text.value || p.attempts <= 1) els.text.value = p.text;
+    if (status === 401) { signOut(); setError(els['send-error'], 'Your session expired. Please sign in again.'); }
+    else if (status === 403 && err && err.error === 'BANNED') { startBan(err.bannedUntil, err.remainingSeconds); }
+    else if (status === 409 && err && err.error === 'HANDLE_REQUIRED') { openHandleDialog(); }
+    else setError(els['send-error'], message);
+  }
+
+  async function attempt(p) {
+    if (state.pending.get(p.messageId) !== p) return; // already resolved by the stream
+    if (!state.token) { setStatus(p, 'not confirmed – it may still appear'); return; }
+    p.attempts++;
+    var res;
     try {
-      var res = await authedFetch(apiBase() + '/api/messages', {
+      res = await authedFetch(apiBase() + '/api/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: text }),
+        body: JSON.stringify({ text: p.text, messageId: p.messageId }),
       });
-      if (res.status === 202) {
-        var body = await res.json();
-        var seen = state.seen.get(body.messageId);
-        if (seen) {
-          // stream result arrived before the POST response
-          if (seen.el && seen.el.parentNode) seen.el.remove();
-          if (seen.type === 'message') { markPosted(p); } else { markRemoved(p); refreshMe(); }
-          state.seen.set(body.messageId, { type: seen.type, el: line });
-        } else state.pending.set(body.messageId, p);
-        return;
-      }
-      drop();
-      els.text.value = text;
-      var err = {};
-      try { err = await res.json(); } catch (e) { /* no body */ }
-      if (res.status === 401) { signOut(); setError(els['send-error'], 'Your session expired. Please sign in again.'); }
-      else if (res.status === 403 && err.error === 'BANNED') { startBan(err.bannedUntil, err.remainingSeconds); }
-      else if (res.status === 409 && err.error === 'HANDLE_REQUIRED') { openHandleDialog(); }
-      else if (res.status === 503) setError(els['send-error'], 'Service temporarily unavailable. Please try again.');
-      else setError(els['send-error'], 'Could not send message (HTTP ' + res.status + ').');
     } catch (e) {
-      drop();
-      els.text.value = text;
-      setError(els['send-error'], 'Network error. Could not send message.');
+      if (state.pending.get(p.messageId) !== p) return;
+      unconfirmed(p, 5000);
+      return;
     }
+    if (state.pending.get(p.messageId) !== p) return; // result arrived meanwhile
+    if (res.status === 202) {
+      state.lastFailed = null;
+      p.el.classList.remove('unconfirmed');
+      setStatus(p, 'checking…');
+      return; // the stream (or history) resolves it
+    }
+    var err = {};
+    try { err = await res.json(); } catch (e) { /* no body */ }
+    if (state.pending.get(p.messageId) !== p) return;
+    if (res.status === 503 && err && err.status === 'UNCONFIRMED') { unconfirmed(p, retryDelayMs(res)); return; }
+    if (res.status === 503 && err && err.error === 'UNAVAILABLE') {
+      failMessage(p, 'Service temporarily unavailable. Please try again.', 503, err);
+    } else if (res.status >= 500) {
+      unconfirmed(p, retryDelayMs(res)); // may have reached Kafka
+    } else {
+      failMessage(p, 'Could not send message (HTTP ' + res.status + ').', res.status, err);
+    }
+  }
+
+  function sendMessage(text, messageId) {
+    setError(els['send-error'], '');
+    var line = userLine(state.me.handle, text, new Date().toISOString(), 'pending');
+    line.appendChild(el('span', 'status', 'checking…'));
+    appendLine(line);
+    var p = { text: text, el: line, messageId: messageId || newMessageId(), attempts: 0, timer: null };
+    // register before the POST so a stream result that beats the response still resolves the line
+    state.pending.set(p.messageId, p);
+    return attempt(p);
   }
 
   els.composer.addEventListener('submit', function (e) {
     e.preventDefault();
     var text = els.text.value.trim();
     if (!text || els.send.disabled) return;
+    var id = null;
+    if (state.lastFailed && state.lastFailed.text === text) id = state.lastFailed.messageId;
+    else state.lastFailed = null;
     els.text.value = '';
-    sendMessage(text);
+    sendMessage(text, id);
   });
 
   // ---------- handle dialog ----------
@@ -561,14 +655,13 @@
     // public stream; after every (re)connect (and on resync) re-fetch history, dedupe by messageId
     startSse('/api/chat/stream', false, function (name, ev) {
       if (name === 'message' || name === 'removed') handleChatEvent(name, ev);
+      else if (name === 'kafka') { state.kafkaVer++; setKafka(ev && ev.status); }
       else if (name === 'resync') loadHistory();
     }, {
-      afterConnect: loadHistory,
-      onState: function (on) {
-        els.conn.textContent = on ? 'live' : 'reconnecting…';
-        els.conn.classList.toggle('on', on);
-      },
+      afterConnect: function () { loadHistory(); loadKafkaStatus(); },
+      onState: function (on) { state.sse = on; renderConn(); },
     });
+    loadKafkaStatus();
 
     var saved = safeStore('get', TOKEN_KEY);
     await initAuth(); // GIS must be ready before any 401 can trigger a silent renewal
