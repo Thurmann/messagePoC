@@ -6,7 +6,11 @@ import no.thurmann.messagepoc.contracts.KafkaTopics
 import no.thurmann.messagepoc.contracts.MessageSubmittedEvent
 import org.apache.kafka.clients.producer.ProducerRecord
 import org.apache.kafka.clients.producer.RecordMetadata
+import org.apache.kafka.common.KafkaException
 import org.apache.kafka.common.TopicPartition
+import org.apache.kafka.common.errors.NotEnoughReplicasException
+import org.apache.kafka.common.errors.SerializationException
+import org.apache.kafka.common.errors.TimeoutException as KafkaTimeoutException
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentCaptor
@@ -49,6 +53,7 @@ import kotlin.test.assertTrue
         "spring.kafka.bootstrap-servers=localhost:1",
         "google.client-id=$TEST_CLIENT_ID",
         "cors.allowed-origins=http://localhost:8083",
+        "message-api.kafka-send-timeout=200ms",
     ],
 )
 @AutoConfigureMockMvc
@@ -93,12 +98,13 @@ class MessageControllerIT {
         )
     }
 
-    private fun post(auth: String?, text: String, correlation: String? = null) =
+    private fun post(auth: String?, text: String, correlation: String? = null, messageId: String? = null) =
         mvc.post("/api/messages") {
             auth?.let { header("Authorization", it) }
             correlation?.let { header("X-Correlation-Id", it) }
             contentType = MediaType.APPLICATION_JSON
-            content = """{"text":${mapper.writeValueAsString(text)}}"""
+            val idJson = messageId?.let { ""","messageId":${mapper.writeValueAsString(it)}""" } ?: ""
+            content = """{"text":${mapper.writeValueAsString(text)}$idJson}"""
         }
 
     private fun bearer(sub: String, email: String = "$sub@test.local") = TestJwtDecoder.bearer(sub, email)
@@ -177,6 +183,82 @@ class MessageControllerIT {
         assertEquals("u1", event.author?.userId)
         assertEquals("alice", event.author?.handle)
         assertEquals("hello world", event.payload.text)
+    }
+
+    @Test
+    fun `client supplied messageId is used`() {
+        user("u1", handle = "alice")
+        val id = UUID.randomUUID().toString()
+        post(bearer("u1"), "hi", messageId = id).andExpect {
+            status { isAccepted() }
+            jsonPath("$.messageId") { value(id) }
+        }
+        val key = ArgumentCaptor.forClass(String::class.java)
+        val value = ArgumentCaptor.forClass(Any::class.java)
+        verify(kafka).send(anyString(), key.capture(), value.capture())
+        assertEquals(id, key.value)
+        assertEquals(id, (value.value as MessageSubmittedEvent).messageId.toString())
+    }
+
+    @Test
+    fun `invalid messageId is 400`() {
+        user("u1", handle = "alice")
+        post(bearer("u1"), "hi", messageId = "not-a-uuid").andExpect {
+            status { isBadRequest() }
+            jsonPath("$.error") { value("INVALID_MESSAGE_ID") }
+        }
+        verifyNoInteractions(kafka)
+    }
+
+    @Test
+    fun `send that never completes is 503 UNCONFIRMED`() {
+        user("u1", handle = "alice")
+        val id = UUID.randomUUID().toString()
+        `when`(kafka.send(anyString(), anyString(), any())).thenReturn(CompletableFuture<SendResult<String, Any>>())
+        val res = post(bearer("u1"), "hi", messageId = id).andExpect {
+            status { isServiceUnavailable() }
+            jsonPath("$.status") { value("UNCONFIRMED") }
+            jsonPath("$.messageId") { value(id) }
+            jsonPath("$.correlationId") { exists() }
+        }.andReturn().response
+        assertEquals("5", res.getHeader("Retry-After"))
+    }
+
+    @Test
+    fun `retriable kafka failure is 503 UNCONFIRMED`() {
+        user("u1", handle = "alice")
+        val failed = CompletableFuture<SendResult<String, Any>>()
+        failed.completeExceptionally(KafkaException("send failed", NotEnoughReplicasException("isr")))
+        `when`(kafka.send(anyString(), anyString(), any())).thenReturn(failed)
+        post(bearer("u1"), "hi").andExpect {
+            status { isServiceUnavailable() }
+            jsonPath("$.status") { value("UNCONFIRMED") }
+        }
+    }
+
+    @Test
+    fun `synchronous kafka timeout is 503 UNCONFIRMED`() {
+        user("u1", handle = "alice")
+        `when`(kafka.send(anyString(), anyString(), any()))
+            .thenThrow(KafkaException(KafkaTimeoutException("metadata")))
+        post(bearer("u1"), "hi").andExpect {
+            status { isServiceUnavailable() }
+            jsonPath("$.status") { value("UNCONFIRMED") }
+        }
+    }
+
+    @Test
+    fun `non-retriable kafka failure is not UNCONFIRMED`() {
+        user("u1", handle = "alice")
+        val failed = CompletableFuture<SendResult<String, Any>>()
+        failed.completeExceptionally(SerializationException("bad"))
+        `when`(kafka.send(anyString(), anyString(), any())).thenReturn(failed)
+        val outcome = runCatching { post(bearer("u1"), "hi").andReturn().response }
+        outcome.onSuccess {
+            assertEquals(500, it.status)
+            assertTrue(!it.contentAsString.contains("UNCONFIRMED"))
+        }
+        outcome.onFailure { assertTrue(it.message.orEmpty().contains("SerializationException") || it.cause != null) }
     }
 
     @Test
