@@ -106,7 +106,7 @@ resolve_version() {
     :
   else
     if command -v gh >/dev/null 2>&1; then
-      tag="$(cd "$PROJECT_DIR" && gh release view --json tagName -q .tagName 2>/dev/null || true)"
+      tag="$(cd "$PROJECT_DIR" && { gh release view --json tagName -q .tagName 2>/dev/null || true; })"
       VERSION="${tag#v}"
     fi
     if [[ -z "$VERSION" ]]; then
@@ -648,7 +648,7 @@ grant_github_identity() {
 import_images() {
   local owner="${GHCR_OWNER}" user="${GHCR_USERNAME:-}" token="${GHCR_TOKEN:-}" svc auth=()
   if [[ -z "$owner" ]] && command -v gh >/dev/null 2>&1; then
-    owner="$(cd "$PROJECT_DIR" && gh repo view --json owner -q .owner.login 2>/dev/null || true)"
+    owner="$(cd "$PROJECT_DIR" && { gh repo view --json owner -q .owner.login 2>/dev/null || true; })"
   fi
   [[ -n "$owner" ]] || fail "could not determine the GHCR owner; set GHCR_OWNER"
   owner="$(lowercase "$owner")"

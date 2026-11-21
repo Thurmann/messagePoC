@@ -251,9 +251,16 @@ the ConfigMap. See [`deploy/kubernetes/README.md`](deploy/kubernetes/README.md)
 for the Google client setup, admins, moderation parameters, SSE and ingress
 timeouts, and the direct-connection requirement for LISTEN/NOTIFY.
 
+To run the application on Azure (AKS) for a demo, use the scripted showcase:
+`scripts/azure-up.sh` creates the environment and deploys a release, and
+`scripts/azure-down.sh` deletes it again. See "Scripted showcase" in
+[`docs/deploy-to-azure.md`](docs/deploy-to-azure.md) for the setup, the costs and
+the limits (the scripts have been tested with stubbed CLIs only).
+
 Vercel can manage DNS for a domain whose runtime is hosted elsewhere. Point the
-chosen subdomain CNAME at the hostname supplied by the cluster ingress/load
-balancer, and configure TLS at that ingress. See Vercel's
+chosen subdomain at the ingress: a CNAME at the hostname supplied by the cluster
+ingress/load balancer, or, when the ingress has a static IP as in the Azure
+guide, an A record at that IP. Configure TLS at that ingress. See Vercel's
 [instructions for pointing a subdomain to an external service](https://vercel.com/kb/guide/pointing-subdomains-to-external-services).
 
 ## Search centralized logs
