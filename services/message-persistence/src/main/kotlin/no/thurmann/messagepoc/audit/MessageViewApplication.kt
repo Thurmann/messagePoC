@@ -7,7 +7,7 @@ import org.springframework.boot.runApplication
 import org.springframework.scheduling.annotation.EnableScheduling
 
 @SpringBootApplication(scanBasePackages = ["no.thurmann.messagepoc"])
-@EnableConfigurationProperties(ModerationProperties::class)
+@EnableConfigurationProperties(ModerationProperties::class, no.thurmann.messagepoc.kafka.KafkaHealthProperties::class)
 @EnableScheduling
 class MessageViewApplication
 

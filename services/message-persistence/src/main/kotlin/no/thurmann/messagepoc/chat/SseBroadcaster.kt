@@ -97,6 +97,8 @@ class SseBroadcaster {
 
     fun publishAdmin(row: AdminModerationRow) = publish(adminSubscribers, "moderation", row)
 
+    fun publishKafkaStatus(status: no.thurmann.messagepoc.kafka.KafkaStatusView) = publish(publicSubscribers, "kafka", status)
+
     /** Tells every client to reload state it may have missed (e.g. after the notification listener reconnected). */
     fun publishResync() {
         publish(publicSubscribers, "resync", emptyMap<String, String>())

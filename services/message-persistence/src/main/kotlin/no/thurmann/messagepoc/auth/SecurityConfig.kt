@@ -28,7 +28,7 @@ class SecurityConfig(
                     .dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR).permitAll()
                     .requestMatchers(
                         "/", "/index.html", "/app.js", "/app.css", "/favicon.ico",
-                        "/api/config", "/api/chat/history", "/api/chat/stream",
+                        "/api/config", "/api/chat/history", "/api/chat/stream", "/api/chat/kafka-status",
                         "/actuator/health/**", "/actuator/health",
                     ).permitAll()
                     .requestMatchers("/api/me/**", "/api/me").authenticated()
