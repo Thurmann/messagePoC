@@ -13,6 +13,7 @@ import org.apache.kafka.common.errors.SerializationException
 import org.apache.kafka.common.errors.TimeoutException as KafkaTimeoutException
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import org.mockito.ArgumentCaptor
 import org.mockito.ArgumentMatchers.any
 import org.mockito.ArgumentMatchers.anyString
@@ -237,7 +238,18 @@ class MessageControllerIT {
     }
 
     @Test
-    fun `synchronous kafka timeout is 503 UNCONFIRMED`() {
+    fun `synchronous spring kafka timeout is 503 UNCONFIRMED`() {
+        user("u1", handle = "alice")
+        `when`(kafka.send(anyString(), anyString(), any()))
+            .thenThrow(org.springframework.kafka.KafkaException("Send failed", KafkaTimeoutException("metadata")))
+        post(bearer("u1"), "hi").andExpect {
+            status { isServiceUnavailable() }
+            jsonPath("$.status") { value("UNCONFIRMED") }
+        }
+    }
+
+    @Test
+    fun `synchronous apache kafka timeout is 503 UNCONFIRMED`() {
         user("u1", handle = "alice")
         `when`(kafka.send(anyString(), anyString(), any()))
             .thenThrow(KafkaException(KafkaTimeoutException("metadata")))
@@ -253,12 +265,10 @@ class MessageControllerIT {
         val failed = CompletableFuture<SendResult<String, Any>>()
         failed.completeExceptionally(SerializationException("bad"))
         `when`(kafka.send(anyString(), anyString(), any())).thenReturn(failed)
-        val outcome = runCatching { post(bearer("u1"), "hi").andReturn().response }
-        outcome.onSuccess {
-            assertEquals(500, it.status)
-            assertTrue(!it.contentAsString.contains("UNCONFIRMED"))
-        }
-        outcome.onFailure { assertTrue(it.message.orEmpty().contains("SerializationException") || it.cause != null) }
+        // not classified as unconfirmed: the exception is rethrown and MockMvc surfaces it as a ServletException
+        val e = assertThrows<jakarta.servlet.ServletException> { post(bearer("u1"), "hi") }
+        val root = generateSequence<Throwable>(e) { it.cause }.last()
+        assertTrue(root is SerializationException, "root cause was $root")
     }
 
     @Test

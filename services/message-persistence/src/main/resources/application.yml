@@ -1,6 +1,11 @@
 spring:
   application:
     name: message-persistence
+  task:
+    scheduling:
+      # 2 threads: a probe blocked by Kafka timeouts (up to ~17s) must not delay SSE heartbeats
+      pool:
+        size: 2
   datasource:
     url: ${JDBC_URL:jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:message_poc}}
     username: ${DB_USER:message_poc}

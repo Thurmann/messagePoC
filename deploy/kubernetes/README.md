@@ -40,7 +40,11 @@ probe is configured by the `kafka-health` settings: `KAFKA_HEALTH_ENABLED`
 (default `true`), `kafka-health.interval`, `kafka-health.timeout`,
 `kafka-health.topic`, `kafka-health.replication-factor`,
 `kafka-health.min-insync-replicas` and `kafka-health.failures-before-down`. For a
-single-broker Kafka, set the replication factor and min ISR to `1`.
+single-broker Kafka, set the replication factor and min ISR to `1`. If the topic already
+exists with a lower replication factor, the probe logs a warning, because it cannot detect
+a lost write quorum correctly. With several message-persistence replicas each runs its own
+probe, so the chat's "live · Kafka unavailable, messages delayed" indicator may briefly
+disagree between replicas.
 
 ### Alternative: managed Kafka (Event Hubs, Confluent, ...)
 

@@ -7,7 +7,6 @@ import no.thurmann.messagepoc.contracts.KafkaTopics
 import no.thurmann.messagepoc.contracts.MessageAuthor
 import no.thurmann.messagepoc.contracts.MessageSubmittedEvent
 import no.thurmann.messagepoc.contracts.MessageSubmittedPayload
-import org.apache.kafka.common.KafkaException
 import org.apache.kafka.common.errors.RetriableException
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
@@ -26,7 +25,6 @@ import org.springframework.web.bind.annotation.RestController
 import java.time.Duration
 import java.time.Instant
 import java.util.UUID
-import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit
 
 @RestController
@@ -100,7 +98,7 @@ class MessageController(
         } catch (e: java.util.concurrent.TimeoutException) {
             return unconfirmed(messageId, correlationId, e)
         } catch (e: Exception) {
-            if ((e is ExecutionException || e is KafkaException) && e.hasUnknownOutcomeCause()) {
+            if (e.hasUnknownOutcomeCause()) {
                 return unconfirmed(messageId, correlationId, e)
             }
             throw e
