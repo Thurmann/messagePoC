@@ -74,7 +74,9 @@ case "$name" in
       *" account show "*) printf 'sub-id-1\nTest Sub\ntenant-1\nme@example.org\n' ;;
       *" version "*) echo 2.70.0 ;;
       *" provider show "*) echo Registered ;;
-      *" group exists "*) echo false ;;
+      *" group exists "*)
+        if [[ -n "${STUB_RG_DELETING:-}" && "$args" == *" rg-message-poc "* ]]; then echo true; else echo false; fi ;;
+      *" group show "*provisioningState*) echo "${STUB_RG_DELETING:-Succeeded}" ;;
       *" acr check-name "*) echo true ;;
       *" rest "*) echo true ;;
       *" network public-ip show "*)
@@ -132,6 +134,8 @@ cp "$T/test.env" "$T/secret.env"
 echo 'TYPESAFE_API_KEY=x' >>"$T/secret.env"
 rc=0
 out="$(loadcfg "$T/secret.env" 2>&1)" || rc=$?
+check "config: env override of a different file value warns" '[[ "$(loadcfg "$T/test.env" HOST=other.mydomain.dev 2>&1)" == *"Warning: HOST is set in the environment"*chat.mydomain.dev* ]]'
+check "config: env equal to file value does not warn" '[[ "$(loadcfg "$T/test.env" HOST=chat.mydomain.dev 2>&1)" != *Warning* ]]'
 check "config: secret key rejected" '[[ $rc -ne 0 && $out == *"is a secret"* ]]'
 cp "$T/test.env" "$T/pwn.env"
 echo 'LOCATION=$(touch '"$T"'/pwn-test)' >>"$T/pwn.env"
@@ -214,6 +218,15 @@ else
   SKIPPED=$((SKIPPED + 18))
 fi
 
+# Ephemeral group still being deleted: up must refuse before any mutation.
+rc=0
+(export AZURE_SCRIPTS_ALLOW_NON_TTY=1 STUB_RG_DELETING=Deleting; run_up --skip-deploy --dry-run </dev/null) || rc=$?
+check "up deleting group: refuses" '[[ $rc -ne 0 ]] && grep -q "previous deletion of rg-message-poc is still running" "$T/out.txt"'
+check "up deleting group: no mutating call" 'nomut'
+rc=0
+(unset TYPESAFE_API_KEY; : >"$STUB_LOG"; PATH="$T/bin-up:$PATH" HOME="$T/home" "$UP" --config "$T/test.env" --version 0.1.0 --skip-deploy --yes-i-understand </dev/null >"$T/out.txt" 2>&1) || rc=$?
+check "up no tty without TYPESAFE_API_KEY: fails before preflight" '[[ $rc -ne 0 ]] && grep -q "TYPESAFE_API_KEY is not set" "$T/out.txt" && ! grep -q "^az " "$STUB_LOG"'
+
 # --- stubs for azure-down.sh -------------------------------------------------------------
 mkdir -p "$T/bin-down"
 cat >"$T/bin-down/stub" <<'STUB'
@@ -227,7 +240,7 @@ case "$name" in
       *" account show "*) printf 'sub-id-1\nTest Sub\ntenant-1\nme@example.org\n' ;;
       *" version "*) echo 2.70.0 ;;
       *" group exists "*)
-        if [[ "$args" == *" rg-message-poc-persistent "* ]]; then echo true; elif [[ -f "$STUB_DIR/deleted-eph" ]]; then echo false; else echo true; fi ;;
+        if [[ "$args" == *" rg-message-poc-persistent "* ]]; then echo true; elif [[ -n "${STUB_ONLY_PERSISTENT:-}" ]]; then echo false; elif [[ -f "$STUB_DIR/deleted-eph" ]]; then echo false; else echo true; fi ;;
       *" group delete --name rg-message-poc --yes"*) touch "$STUB_DIR/deleted-eph" ;;
       *" group show "*"tags.lifecycle"*)
         if [[ "$args" == *" rg-message-poc-persistent "* ]]; then echo "${STUB_PERS_TAG:-persistent}"; else echo "${STUB_EPH_TAG-ephemeral}"; fi ;;
@@ -295,6 +308,11 @@ rc=0
 (export_hook; export STUB_EPH_TAG=; run_down --no-backup <<<$'y\nrg-message-poc') || rc=$?
 check "down missing lifecycle tag: refuses" '[[ $rc -ne 0 ]] && grep -q "lifecycle tag" "$T/out.txt"'
 check "down missing lifecycle tag: no mutating call" 'nomut'
+
+rc=0
+(export_hook; export STUB_ONLY_PERSISTENT=1; run_down --no-backup <<<'') || rc=$?
+check "down only persistent exists, no --include-persistent: nothing to delete" '[[ $rc -eq 0 ]] && grep -q "Nothing to delete" "$T/out.txt" && ! grep -q "Type the resource group name" "$T/out.txt"'
+check "down only persistent exists, no --include-persistent: no group delete or role change" '! grep -qE "group delete|role assignment delete" "$STUB_LOG"'
 
 rc=0
 run_down --include-persistent --yes-i-understand --no-backup </dev/null || rc=$?

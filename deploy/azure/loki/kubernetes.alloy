@@ -1,7 +1,7 @@
 discovery.kubernetes "pods" {
   role = "pod"
   namespaces {
-    names = ["message-poc"]
+    own_namespace = true
   }
 }
 

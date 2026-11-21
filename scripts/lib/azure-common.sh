@@ -65,7 +65,8 @@ make_work_dir() {
 # --- configuration --------------------------------------------------------------------
 
 # Parses KEY=value lines without evaluating them. Variables already set in the
-# environment win over the file.
+# environment win over the file; a warning names every key where that hides a different
+# value in the file (generic names such as HOST are easy to have exported by accident).
 load_config() {
   local file="$1" line key value rest lineno=0
   [[ -f "$file" ]] || fail "config file not found: $file (copy scripts/azure.env.example to scripts/azure.env and edit it)"
@@ -102,6 +103,9 @@ load_config() {
         ;;
     esac
     if [[ -n "${!key+x}" ]]; then
+      if [[ "${!key}" != "$value" ]]; then
+        warn "$key is set in the environment ('${!key}') and overrides the config file ('$value'); unset it to use the file"
+      fi
       continue
     fi
     printf -v "$key" '%s' "$value"
@@ -238,17 +242,24 @@ provider_states() {
   done
 }
 
-# Prints true or false; fails when the group exists with the wrong lifecycle tag.
+# Prints true or false; fails when the group exists with the wrong lifecycle tag, or when
+# it is still being deleted and the optional third argument is "refuse-deleting".
 check_group() {
-  local rg="$1" lifecycle="$2" exists tag
+  local rg="$1" lifecycle="$2" deleting_mode="${3:-}" exists tag state
   exists="$(az group exists --name "$rg" --output tsv 2>/dev/null || true)"
   if [[ "$exists" != true ]]; then
     printf 'false'
     return 0
   fi
+  if [[ "$deleting_mode" == refuse-deleting ]]; then
+    state="$(az group show --name "$rg" --query 'properties.provisioningState' --output tsv 2>/dev/null || true)"
+    if [[ "$state" == Deleting ]]; then
+      fail "a previous deletion of $rg is still running; wait until 'az group exists --name $rg' prints false, then rerun"
+    fi
+  fi
   tag="$(az group show --name "$rg" --query 'tags.lifecycle' --output tsv 2>/dev/null || true)"
   if [[ "$tag" != "$lifecycle" ]]; then
-    fail "resource group $rg exists but its lifecycle tag is '${tag:-missing}', expected '$lifecycle'; the scripts only manage groups they created"
+    fail "resource group $rg exists but its lifecycle tag is '${tag:-missing}', expected '$lifecycle'; the scripts only manage groups they created. If the group is yours, run: az group update --name $rg --set tags.lifecycle=$lifecycle tags.managed-by=message-poc-scripts tags.project=message-poc"
   fi
   printf 'true'
 }

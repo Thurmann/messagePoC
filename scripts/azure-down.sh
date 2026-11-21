@@ -446,7 +446,7 @@ if "$DRY_RUN"; then
   exit 0
 fi
 
-if [[ "$EPHEMERAL_EXISTS" != true && ! ( "$INCLUDE_PERSISTENT" && "$PERSISTENT_EXISTS" == true ) ]]; then
+if [[ "$EPHEMERAL_EXISTS" != true ]] && ! { "$INCLUDE_PERSISTENT" && [[ "$PERSISTENT_EXISTS" == true ]]; }; then
   log ""
   log "Nothing to delete."
   kube_context_cleanup "$AKS_NAME" "$EPHEMERAL_RG"
