@@ -134,6 +134,7 @@ Defaults apply when a variable is unset.
 | `MODERATION_BAN_LADDER` | message-persistence | `1m,5m,30m,2h,12h,24h` | Ban durations by step; the last step repeats |
 | `MODERATION_ESCALATION_WINDOW` | message-persistence | `1d` | Window after a ban in which the next ban escalates |
 | `MODERATION_TECHNICAL_DLT_COUNTS_AS_STRIKE` | message-persistence | `false` | Whether technical DLT failures count as strikes. **Warning:** if set to `true`, a missing `TYPESAFE_API_KEY` or a Jev outage sends every message to the DLT and bans users after 6 messages |
+| `KAFKA_HEALTH_ENABLED` | message-persistence | `true` | Runs the Kafka write probe that drives the chat's connection status. Set to `false` to turn it off |
 
 `message-api` also uses the database variables `DB_HOST`, `DB_PORT`, `DB_NAME`,
 `DB_USER`, `DB_PASSWORD`, and `JDBC_URL`, the same as `message-persistence`. It
@@ -143,10 +144,11 @@ reads the handle and ban state from that database.
 
 | Service | Endpoint | Auth | Purpose |
 | --- | --- | --- | --- |
-| message-api | `POST /api/messages` | Bearer ID token | Submit a message; returns `202` with `messageId`. Errors: `401`, `403` (`BANNED`, with `bannedUntil`), `409` (handle required), `503` (database unreachable) |
+| message-api | `POST /api/messages` | Bearer ID token | Submit a message; optional `messageId` (UUID) in the body, generated if absent; returns `202` with `messageId`. Errors: `400` (`INVALID_MESSAGE_ID`), `401`, `403` (`BANNED`, with `bannedUntil`), `409` (handle required), `503` (`UNCONFIRMED`: outcome unknown, resend with the same `messageId`; `UNAVAILABLE`: database unreachable) |
 | message-persistence | `GET /api/config` | public | Client ID and message API base URL for the frontend |
 | message-persistence | `GET /api/chat/history?limit=100` | public | Recent public messages and removed placeholders (never rejected text) |
-| message-persistence | `GET /api/chat/stream` | public | Live `message` and `removed` events (SSE) |
+| message-persistence | `GET /api/chat/stream` | public | Live `message`, `removed` and `kafka` events (SSE) |
+| message-persistence | `GET /api/chat/kafka-status` | public | Kafka write probe state: `{status, since, checkedAt}` (`UNKNOWN`, `UP` or `DOWN`) |
 | message-persistence | `GET /api/me` | Bearer ID token | Your handle, strikes, warning and ban state; creates your user record |
 | message-persistence | `PUT /api/me/handle` | Bearer ID token | Choose your handle once (`^[A-Za-z0-9_]{3,20}$`) |
 | message-persistence | `GET /api/admin/moderation-log?limit=200` | admin | Moderation log |
@@ -215,6 +217,12 @@ The API returns `202 Accepted`. The final `VALIDATED` or `REJECTED` result is
 shown in the chat and is visible in the application logs in Grafana and as an event in Kafbat UI. The
 validation service needs `TYPESAFE_API_KEY`; if Jev is unavailable, Kafka's
 listener retry handler sends the failed record to the DLT after its retries.
+
+If Kafka does not confirm the send within 5 seconds (`message-api.kafka-send-timeout`),
+the API returns `503` with `Retry-After: 5` and `"status":"UNCONFIRMED"`. The
+message may still be delivered, so resend with the same `messageId`; only the
+first result for a `messageId` is stored. `sendmessage.sh` does not send a
+`messageId`, so the server generates one and a script retry creates a new message.
 
 ## Force a dead-letter event
 

@@ -32,6 +32,16 @@ lets writes continue with one broker down and through rolling restarts (min ISR
 3 would block writes whenever any broker is down). Pod anti-affinity is
 preferred, so use at least 3 nodes to get one broker per node.
 
+`message-persistence` also creates one topic that is not in `kafka/`:
+`poc.health.v1` (1 partition, replication factor 3, min ISR 2, 1 hour retention).
+It is created at startup if missing. The Kafka write probe writes to it every 10
+seconds to report whether Kafka accepts writes, so expect a fifth topic. The
+probe is configured by the `kafka-health` settings: `KAFKA_HEALTH_ENABLED`
+(default `true`), `kafka-health.interval`, `kafka-health.timeout`,
+`kafka-health.topic`, `kafka-health.replication-factor`,
+`kafka-health.min-insync-replicas` and `kafka-health.failures-before-down`. For a
+single-broker Kafka, set the replication factor and min ISR to `1`.
+
 ### Alternative: managed Kafka (Event Hubs, Confluent, ...)
 
 Skip `kafka/` and override these ConfigMap values in an overlay:
@@ -40,6 +50,11 @@ Skip `kafka/` and override these ConfigMap values in an overlay:
 `SPRING_KAFKA_PROPERTIES_SASL_MECHANISM: PLAIN`. Add the key
 `SPRING_KAFKA_PROPERTIES_SASL_JAAS_CONFIG` to `message-poc-secrets`. Create the
 four topics with the provider's tooling.
+
+`message-persistence` also needs `poc.health.v1` (see above). It creates the
+topic at startup, which needs permission to create topics. If the identity
+cannot create topics, create the topic by hand with the same settings, or set
+`KAFKA_HEALTH_ENABLED=false` in the ConfigMap.
 
 ## Build and publish the application images
 
