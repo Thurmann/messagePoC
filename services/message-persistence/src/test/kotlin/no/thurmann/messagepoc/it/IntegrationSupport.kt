@@ -87,6 +87,7 @@ class TestJwtConfig {
     properties = [
         "spring.kafka.listener.auto-startup=false",
         "spring.kafka.bootstrap-servers=localhost:1",
+        "kafka-health.enabled=false",
         "google.client-id=$TEST_CLIENT_ID",
         "admin.emails=$ADMIN_EMAIL",
         "LOKI_URL=http://localhost:1",

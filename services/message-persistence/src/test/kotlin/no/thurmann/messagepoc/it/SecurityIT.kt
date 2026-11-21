@@ -24,6 +24,7 @@ class SecurityIT : AbstractIntegrationTest() {
     fun `public endpoints are reachable without authentication`() {
         mvc.get("/api/config").andExpect { status { isOk() }; jsonPath("$.googleClientId") { value(TEST_CLIENT_ID) } }
         mvc.get("/api/chat/history").andExpect { status { isOk() } }
+        mvc.get("/api/chat/kafka-status").andExpect { status { isOk() }; jsonPath("$.status") { value("UNKNOWN") } }
         mvc.get("/").andExpect { status { isOk() } }
         mvc.get("/actuator/health").andExpect { status { isOk() } }
     }
