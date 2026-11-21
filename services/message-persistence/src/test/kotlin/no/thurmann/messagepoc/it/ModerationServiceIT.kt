@@ -131,6 +131,63 @@ class ModerationServiceIT : AbstractIntegrationTest() {
         assertEquals(6, bans("u1").single()["strikes_at_ban"])
     }
 
+    private fun countByMessage(id: UUID) = jdbc.queryForObject("SELECT count(*) FROM message_result WHERE message_id = ?", Int::class.java, id)!!
+
+    @Test
+    fun `a second rejected result with the same messageId and a new eventId is ignored`() {
+        createUser("u1")
+        val messageId = UUID.randomUUID()
+        service.record(rejected("u1").also { it.messageId = messageId })
+        service.record(rejected("u1").also { it.messageId = messageId })
+
+        assertEquals(1, countByMessage(messageId))
+        assertEquals(listOf(1), strikesAfter("u1"))
+        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM message_result WHERE author_id='u1' AND strike", Int::class.java))
+    }
+
+    @Test
+    fun `a DLT result after a validated result with the same messageId is ignored`() {
+        createUser("u1")
+        val messageId = UUID.randomUUID()
+        service.record(validated("u1").also { it.messageId = messageId })
+        service.record(dlt(0.9, "u1").also { it.messageId = messageId })
+
+        assertEquals(1, countByMessage(messageId))
+        assertEquals("VALIDATED", jdbc.queryForObject("SELECT status FROM message_result WHERE message_id = ?", String::class.java, messageId))
+        assertEquals(0, service.currentStrikes("u1"))
+    }
+
+    @Test
+    fun `concurrent results with the same messageId are stored once`() {
+        createUser("u1")
+        val messageId = UUID.randomUUID()
+        val threads = 8
+        val pool = Executors.newFixedThreadPool(threads)
+        val start = CountDownLatch(1)
+        val futures = (1..threads).map { pool.submit { start.await(); service.record(rejected("u1").also { it.messageId = messageId }) } }
+        start.countDown()
+        futures.forEach { it.get(30, TimeUnit.SECONDS) }
+        pool.shutdown()
+
+        assertEquals(1, countByMessage(messageId))
+        assertTrue(jdbc.queryForObject("SELECT count(*) FROM message_result WHERE author_id='u1' AND strike", Int::class.java)!! <= 1)
+        assertEquals(1, service.currentStrikes("u1"))
+    }
+
+    @Test
+    fun `a duplicate messageId at the ban boundary neither adds a strike nor a ban`() {
+        createUser("u1")
+        reject("u1", 5)
+        val messageId = UUID.randomUUID()
+        service.record(rejected("u1").also { it.messageId = messageId })
+        service.record(rejected("u1").also { it.messageId = messageId })
+
+        assertEquals(6, jdbc.queryForObject("SELECT count(*) FROM message_result WHERE author_id='u1' AND strike", Int::class.java))
+        assertEquals(listOf(1, 2, 3, 4, 5, 6), strikesAfter("u1"))
+        assertEquals(1, countByMessage(messageId))
+        assertEquals(1, bans("u1").size)
+    }
+
     @Test
     fun `concurrent strikes at the ban boundary create exactly one ban`() {
         createUser("u1")

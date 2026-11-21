@@ -26,10 +26,18 @@ class ModerationService(
     fun record(result: MessageResult) {
         val authorId = result.authorId
         val knownAuthor = authorId != null && lockUser(authorId)
-        // Serialise redeliveries of the same event, then skip duplicates only after the user lock is held,
-        // so a redelivered event is never counted twice and never overwrites an existing row.
-        jdbcTemplate.query("SELECT pg_advisory_xact_lock(hashtext(?))", RowCallbackHandler { }, result.eventId.toString())
+        // Serialise results for the same message (a redelivered event has the same messageId), then skip duplicates
+        // only after the user lock is held. The first result stored for a messageId wins: a redelivered event or a
+        // retry of the same message under a new eventId is never counted twice and never overwrites an existing row.
+        jdbcTemplate.query("SELECT pg_advisory_xact_lock(hashtext(?))", RowCallbackHandler { }, result.messageId.toString())
         if (messageResultRepository.existsById(result.eventId)) return
+        if (messageResultRepository.existsByMessageId(result.messageId)) {
+            logger.info(
+                "Duplicate message ignored messageId={} eventId={} correlationId={}",
+                result.messageId, result.eventId, result.correlationId,
+            )
+            return
+        }
 
         if (authorId != null && knownAuthor) {
             val strike = policy.countsAsStrike(result.status, result.profanityScore)
