@@ -93,6 +93,7 @@ class KafkaWriteProbe internal constructor(
                 admin.createTopics(listOf(topic)).all().get(props.timeout.toMillis(), TimeUnit.MILLISECONDS)
             } catch (e: ExecutionException) {
                 if (e.cause !is TopicExistsException) throw e
+                checkReplication(admin)
             }
             topicEnsured = true
         } finally {
@@ -100,6 +101,23 @@ class KafkaWriteProbe internal constructor(
                 admin.close(java.time.Duration.ofSeconds(1))
             } catch (_: Exception) {
             }
+        }
+    }
+
+    /** Best effort: a topic with fewer replicas than configured cannot reveal a lost write quorum. Never fails. */
+    private fun checkReplication(admin: Admin) {
+        try {
+            val description = admin.describeTopics(listOf(props.topic)).allTopicNames()
+                .get(props.timeout.toMillis(), TimeUnit.MILLISECONDS)[props.topic] ?: return
+            val actual = description.partitions().minOfOrNull { it.replicas().size } ?: return
+            if (actual < props.replicationFactor) {
+                logger.warn(
+                    "Kafka health topic {} has replication factor {} < {}; the write probe cannot detect lost write quorum correctly",
+                    props.topic, actual, props.replicationFactor,
+                )
+            }
+        } catch (e: Exception) {
+            logger.debug("Could not describe health topic {}", props.topic, e)
         }
     }
 

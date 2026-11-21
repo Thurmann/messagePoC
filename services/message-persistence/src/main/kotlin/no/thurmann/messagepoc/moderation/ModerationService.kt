@@ -31,11 +31,19 @@ class ModerationService(
         // retry of the same message under a new eventId is never counted twice and never overwrites an existing row.
         jdbcTemplate.query("SELECT pg_advisory_xact_lock(hashtext(?))", RowCallbackHandler { }, result.messageId.toString())
         if (messageResultRepository.existsById(result.eventId)) return
-        if (messageResultRepository.existsByMessageId(result.messageId)) {
-            logger.info(
-                "Duplicate message ignored messageId={} eventId={} correlationId={}",
-                result.messageId, result.eventId, result.correlationId,
-            )
+        val existing = messageResultRepository.findAllByMessageId(result.messageId).firstOrNull()
+        if (existing != null) {
+            if (existing.authorId != result.authorId) {
+                logger.warn(
+                    "Duplicate messageId from a different author ignored messageId={} eventId={} existingAuthorId={} newAuthorId={}",
+                    result.messageId, result.eventId, existing.authorId, result.authorId,
+                )
+            } else {
+                logger.info(
+                    "Duplicate message ignored messageId={} eventId={} correlationId={}",
+                    result.messageId, result.eventId, result.correlationId,
+                )
+            }
             return
         }
 

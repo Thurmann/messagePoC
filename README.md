@@ -220,8 +220,15 @@ listener retry handler sends the failed record to the DLT after its retries.
 
 If Kafka does not confirm the send within 5 seconds (`message-api.kafka-send-timeout`),
 the API returns `503` with `Retry-After: 5` and `"status":"UNCONFIRMED"`. The
-message may still be delivered, so resend with the same `messageId`; only the
-first result for a `messageId` is stored. `sendmessage.sh` does not send a
+message may still be delivered (the producer retries for up to `delivery.timeout.ms`,
+default 120 s), so resend with the same `messageId`; only the first result for a
+`messageId` is stored. The browser retries for about a minute (6 attempts), then shows
+"not confirmed – it may still appear"; after a longer outage the message may be lost and
+must be sent again. Known limit: the first result per `messageId` wins, so if one copy
+of a resent message ends in the technical DLT before a later copy is validated, the
+message shows as removed. The chat shows "live · Kafka unavailable, messages delayed"
+while the write probe reports `DOWN`; with several message-persistence replicas each
+runs its own probe, so the indicator may briefly disagree between replicas. `sendmessage.sh` does not send a
 `messageId`, so the server generates one and a script retry creates a new message.
 
 ## Force a dead-letter event

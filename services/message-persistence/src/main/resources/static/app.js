@@ -206,7 +206,7 @@
     if (state.sse === null) return;
     var warn = state.sse && state.kafka === 'DOWN';
     els.conn.textContent = !state.sse ? 'reconnecting…'
-      : warn ? 'live · sending paused (Kafka unavailable)' : 'live';
+      : warn ? 'live · Kafka unavailable, messages delayed' : 'live';
     els.conn.title = !state.sse ? 'Connection to the chat stream lost; reconnecting.'
       : warn ? 'Live updates work, but the message broker is unavailable. Messages you send are retried until confirmed.'
         : 'Connected to the live chat stream.';
@@ -297,6 +297,15 @@
     scheduleRenewal(state.token);
   }
   function signOut() {
+    // a retry must never post with another user's token: stop every in-flight send of the signed-out user
+    state.pending.forEach(function (p) {
+      p.stopped = true;
+      if (p.timer) { clearTimeout(p.timer); p.timer = null; }
+      p.el.classList.remove('pending');
+      p.el.classList.add('unconfirmed');
+      setStatus(p, 'not confirmed – it may still appear');
+    });
+    state.lastFailed = null;
     setToken(null);
     state.me = null;
     if (window.google && google.accounts && google.accounts.id) google.accounts.id.disableAutoSelect();
@@ -384,7 +393,7 @@
     els.send.disabled = !ok;
     els.text.placeholder = !signed ? 'Sign in to chat' : !me.handle ? 'Choose a handle to chat'
       : isBanned() ? 'You are temporarily banned'
-      : state.kafka === 'DOWN' ? 'Write a message (sending is paused, messages may be delayed)' : 'Write a message';
+      : state.kafka === 'DOWN' ? 'Write a message (Kafka unavailable, messages may be delayed)' : 'Write a message';
   }
 
   function retryDelayMs(res) {
@@ -419,7 +428,8 @@
   }
 
   async function attempt(p) {
-    if (state.pending.get(p.messageId) !== p) return; // already resolved by the stream
+    if (p.stopped) return;
+    if (p.stopped || state.pending.get(p.messageId) !== p) return; // already resolved by the stream
     if (!state.token) { setStatus(p, 'not confirmed – it may still appear'); return; }
     p.attempts++;
     var res;
@@ -430,11 +440,11 @@
         body: JSON.stringify({ text: p.text, messageId: p.messageId }),
       });
     } catch (e) {
-      if (state.pending.get(p.messageId) !== p) return;
+      if (p.stopped || state.pending.get(p.messageId) !== p) return;
       unconfirmed(p, 5000);
       return;
     }
-    if (state.pending.get(p.messageId) !== p) return; // result arrived meanwhile
+    if (p.stopped || state.pending.get(p.messageId) !== p) return; // result arrived meanwhile
     if (res.status === 202) {
       state.lastFailed = null;
       p.el.classList.remove('unconfirmed');
@@ -443,7 +453,7 @@
     }
     var err = {};
     try { err = await res.json(); } catch (e) { /* no body */ }
-    if (state.pending.get(p.messageId) !== p) return;
+    if (p.stopped || state.pending.get(p.messageId) !== p) return;
     if (res.status === 503 && err && err.status === 'UNCONFIRMED') { unconfirmed(p, retryDelayMs(res)); return; }
     if (res.status === 503 && err && err.error === 'UNAVAILABLE') {
       failMessage(p, 'Service temporarily unavailable. Please try again.', 503, err);
@@ -459,7 +469,8 @@
     var line = userLine(state.me.handle, text, new Date().toISOString(), 'pending');
     line.appendChild(el('span', 'status', 'checking…'));
     appendLine(line);
-    var p = { text: text, el: line, messageId: messageId || newMessageId(), attempts: 0, timer: null };
+    if (!messageId || state.pending.has(messageId)) messageId = newMessageId(); // never overwrite a pending entry
+    var p = { text: text, el: line, messageId: messageId, attempts: 0, timer: null, stopped: false };
     // register before the POST so a stream result that beats the response still resolves the line
     state.pending.set(p.messageId, p);
     return attempt(p);
@@ -471,7 +482,7 @@
     if (!text || els.send.disabled) return;
     var id = null;
     if (state.lastFailed && state.lastFailed.text === text) id = state.lastFailed.messageId;
-    else state.lastFailed = null;
+    state.lastFailed = null;
     els.text.value = '';
     sendMessage(text, id);
   });

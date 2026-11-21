@@ -93,10 +93,16 @@ Kafka.
 The browser sends its own `messageId` (UUID) with each message and reuses it when
 it retries. If Kafka does not confirm the send in time, `message-api` returns
 `503 UNCONFIRMED`. The outcome is unknown, not failed: the producer keeps
-retrying in the background and the record usually arrives later. The browser
-shows the line as "not confirmed yet – retrying…" and resends with the same
-`messageId` (up to six attempts). Because only the first result for a `messageId`
-is stored, a resend does not create a second message.
+retrying in the background for up to `delivery.timeout.ms` (default 120 s), so
+the record may still arrive. The browser shows the line as "not confirmed yet –
+retrying…" and resends with the same `messageId` (six attempts, about a minute),
+then shows "not confirmed – it may still appear". After a longer outage the
+message may be lost and must be sent again. Because only the first result for a
+`messageId` is stored, a resend does not create a second message.
+
+Known limit: the first result per `messageId` wins. If one copy of a resent
+message ends in the technical DLT (for example during a scoring service outage)
+before a later copy is validated, the message shows as removed.
 
 ## Persistence, strikes, and bans
 
@@ -160,8 +166,11 @@ probes, and `UP` again after one success. The probe writes a real record instead
 of reading cluster metadata, because metadata can still be served after the KRaft
 controller quorum is lost. With one of three brokers down, writes still succeed
 and the status stays `UP`; with two down, writes are refused and the status
-becomes `DOWN`. The browser shows "live · sending paused (Kafka unavailable)"
-while the status is `DOWN`.
+becomes `DOWN`. The browser shows "live · Kafka unavailable, messages delayed"
+while the status is `DOWN`. Sending is not disabled.
+
+Known limit: with several `message-persistence` replicas, each runs its own
+probe, so the indicator may briefly disagree between replicas.
 
 The probe is not a Spring health indicator. `/actuator/health` and the Kubernetes
 liveness and readiness probes do not depend on Kafka.
