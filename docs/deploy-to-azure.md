@@ -381,6 +381,27 @@ already sets `PLAINTEXT` and the bootstrap address
 `message-poc-kafka-bootstrap:9092`, and no `SPRING_KAFKA_PROPERTIES_SASL_JAAS_CONFIG`
 key is needed.
 
+**Failover test.** Once the cluster runs, `scripts/kafka-failover-test.sh run`
+checks the replication settings against real broker failures (about 10 to 15
+minutes):
+
+1. It creates a test topic with 3 partitions, replication factor 3 and min ISR 2.
+2. It stops one broker. Writes with `acks=all` must still succeed.
+3. It stops a second broker. Writes with `acks=all` must be refused.
+4. It brings both brokers back and deletes the test topic.
+
+Strimzi recreates a deleted pod at once, so the script cordons the nodes first,
+which keeps the stopped brokers `Pending`. It asks before it changes anything,
+pauses between the phases so that you can try the chat, and restores everything
+if it is interrupted (`restore` does the same by hand). Each node is also a KRaft
+controller, so with two nodes down the controller quorum is lost as well. Writes
+can then fail with a timeout instead of `NotEnoughReplicas`.
+
+What to watch in the chat during phase 2: within about 20 seconds the connection
+indicator changes to "live · Kafka unavailable, messages delayed". Messages you
+send show "not confirmed yet – retrying…" (the API answers `503 UNCONFIRMED`),
+and once the brokers are back each of them appears exactly once.
+
 ## 7. Ingress, TLS, and the public IP
 
 The base Ingress has no `ingressClassName` and points to the TLS Secret
