@@ -20,12 +20,13 @@ overlay that includes it):
 ```sh
 kubectl create namespace strimzi
 helm install strimzi-cluster-operator oci://quay.io/strimzi-helm/strimzi-kafka-operator \
-  -n strimzi --set watchAnyNamespace=true
+  -n strimzi --set watchAnyNamespace=true --version 1.3.1
 kubectl apply -k deploy/kubernetes/kafka -n <namespace>
 ```
 
-The `version` in `kafka/kafka.yaml` must be supported by the installed operator
-release. The cluster runs 3 brokers with replication factor 3 and
+The manifests use the `kafka.strimzi.io/v1` API, which Strimzi 1.x serves (older
+operators only serve `v1beta2`). The `version` in `kafka/kafka.yaml` (4.3.1) must be
+supported by the installed operator release; Strimzi 1.3.1 supports it. The cluster runs 3 brokers with replication factor 3 and
 `min.insync.replicas` 2. The services produce with `acks=all`, so min ISR 2
 lets writes continue with one broker down and through rolling restarts (min ISR
 3 would block writes whenever any broker is down). Pod anti-affinity is

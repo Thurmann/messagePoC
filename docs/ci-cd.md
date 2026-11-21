@@ -104,6 +104,16 @@ in GitHub.
    | `AZURE_RESOURCE_GROUP` | Resource group of the AKS cluster |
    | `AKS_NAME` | AKS cluster name |
    | `ACR_NAME` | Registry name, without `.azurecr.io` |
+   | `PG_SERVER` | PostgreSQL server name (fills `<pg-server>` in the overlay) |
+   | `HOST` | Frontend host (fills `messages.example.com`) |
+   | `API_HOST` | API host (fills `api.messages.example.com`) |
+   | `ADMIN_EMAILS` | Comma-separated admin emails (fills `you@example.com`) |
+   | `GOOGLE_CLIENT_ID` | Optional; overrides the overlay's committed client ID |
+
+   The last five fill the overlay's placeholders when the workflow renders it, the
+   same way `scripts/azure-up.sh` does, so the hosts and emails do not have to be
+   committed. Values committed in the overlay still work; the workflow fails if a
+   placeholder is left after the substitution.
 
 4. Add the repository variable `DEPLOY_TO_AKS` with the value `true`
    (Settings → Secrets and variables → Actions → Variables). Without it, releases
@@ -126,10 +136,12 @@ the following:
   exist, a deployment from `main` or from a tag fails. Set it back to `true`
   after `azure-up.sh` has finished. The scripts only read this variable and
   warn; they never change GitHub settings.
-- `azure-up.sh` substitutes the overlay placeholders (ACR, PostgreSQL server,
-  hosts, emails) locally when it renders the manifests, so the committed overlay
-  can keep them. `deploy.yml` does not, and still needs real values committed
-  (see above).
+- Both `azure-up.sh` and `deploy.yml` fill in the overlay placeholders (ACR,
+  PostgreSQL server, hosts, emails) when they render the manifests, so the
+  committed overlay keeps them. Keep the environment variables above equal to
+  the values in `scripts/azure.env`.
+- If the cluster or registry does not exist, `deploy.yml` stops early with an
+  error that points to `azure-up.sh` and `DEPLOY_TO_AKS`.
 
 To deploy, or roll back to, an existing release, run **Deploy** from the Actions
 tab and enter its version without the `v` (for example `0.1.0`).

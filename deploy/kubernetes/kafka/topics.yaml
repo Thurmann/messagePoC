@@ -1,4 +1,4 @@
-apiVersion: kafka.strimzi.io/v1beta2
+apiVersion: kafka.strimzi.io/v1
 kind: KafkaTopic
 metadata:
   name: poc.messages.submitted.v1
@@ -10,7 +10,7 @@ spec:
   config:
     min.insync.replicas: "2"
 ---
-apiVersion: kafka.strimzi.io/v1beta2
+apiVersion: kafka.strimzi.io/v1
 kind: KafkaTopic
 metadata:
   name: poc.messages.results.v1
@@ -22,7 +22,7 @@ spec:
   config:
     min.insync.replicas: "2"
 ---
-apiVersion: kafka.strimzi.io/v1beta2
+apiVersion: kafka.strimzi.io/v1
 kind: KafkaTopic
 metadata:
   name: poc.messages.submitted.v1-dlt
@@ -34,7 +34,7 @@ spec:
   config:
     min.insync.replicas: "2"
 ---
-apiVersion: kafka.strimzi.io/v1beta2
+apiVersion: kafka.strimzi.io/v1
 kind: KafkaTopic
 metadata:
   name: poc.messages.results.v1-dlt

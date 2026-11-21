@@ -300,8 +300,8 @@ backup_db() {
     ip="$(curl -fsS --max-time 10 https://api.ipify.org 2>/dev/null || true)"
   fi
   [[ "$ip" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || fail "could not detect your public IP for the PostgreSQL firewall; set OPERATOR_IP"
-  az postgres flexible-server firewall-rule create --resource-group "$EPHEMERAL_RG" --name "$PG_SERVER" \
-    --rule-name operator --start-ip-address "$ip" --end-ip-address "$ip" --output none ||
+  az postgres flexible-server firewall-rule create --resource-group "$EPHEMERAL_RG" --server-name "$PG_SERVER" \
+    --name operator --start-ip-address "$ip" --end-ip-address "$ip" --output none ||
     fail "could not open the PostgreSQL firewall for $ip; nothing was deleted"
   ts="$(date -u +%Y%m%dT%H%M%SZ)"
   out="${BACKUP_DIR}/message_poc-${ts}.dump"
