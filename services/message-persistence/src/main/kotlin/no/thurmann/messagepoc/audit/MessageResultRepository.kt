@@ -14,6 +14,8 @@ interface MessageResultRepository : JpaRepository<MessageResult, UUID> {
 
     fun findAllByMessageId(messageId: UUID): List<MessageResult>
 
+    fun existsByMessageId(messageId: UUID): Boolean
+
     fun countByAuthorIdAndStrikeTrue(authorId: String): Int
 
     fun countByAuthorIdAndStrikeTrueAndOccurredAtGreaterThanEqual(authorId: String, since: Instant): Int
