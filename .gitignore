@@ -35,3 +35,6 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+
+# Local Azure showcase configuration (template: scripts/azure.env.example)
+scripts/azure.env
