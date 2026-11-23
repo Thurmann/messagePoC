@@ -1,9 +1,10 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Live chat · Kafka PoC</title>
+  <script src="theme.js"></script>
   <link rel="stylesheet" href="app.css">
 </head>
 <body>
@@ -14,6 +15,7 @@
       <button type="button" class="tab" id="tab-log" data-tab="log">Admin log</button>
     </nav>
     <div class="auth">
+      <button type="button" class="btn ghost theme-toggle" id="theme-toggle" aria-pressed="false" aria-label="Switch to dark mode" title="Switch to dark mode"><span class="theme-icon" aria-hidden="true">&#9790;</span><span class="theme-label">Dark</span></button>
       <span class="conn" id="conn" title="Stream connection">offline</span>
       <div id="me" class="me" hidden>
         <span class="me-handle" id="me-handle"></span>
