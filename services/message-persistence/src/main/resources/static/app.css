@@ -1,26 +1,26 @@
+/* Themes match thurmann-nielsen.no: light = blue/white, dark = black, dark green and orange.
+   theme.js sets data-theme on <html> before first paint (saved choice, else the OS preference). */
 :root {
-  --bg: #f4f5f2; --surface: #ffffff; --surface-2: #eef1ec; --line: #dfe4de;
-  --fg: #17221d; --muted: #627068; --faint: #8a968e;
-  --accent: #2f6b4a; --accent-soft: #e3f0e7; --on-accent: #ffffff;
-  --ok: #28643b; --ok-bg: #e6f3e9; --warn: #984d20; --warn-bg: #fbebdf; --dlt: #78366f; --dlt-bg: #f1e1ef;
-  --u0: #2f6b4a; --u1: #3b5bab; --u2: #a2462e; --u3: #7a4fa0; --u4: #8a6a12; --u5: #0f7480; --u6: #b0386a; --u7: #4f5d75;
+  --bg: #f4f6fa; --bg-glow: rgba(89, 130, 230, .09); --surface: #ffffff; --surface-2: #f1f4f9; --line: #e0e6ef;
+  --fg: #17243b; --muted: #69778e; --faint: #7a879a;
+  --accent: #315cce; --accent-hover: #244cb5; --accent-soft: #eef3ff; --on-accent: #ffffff;
+  --ok: #21844c; --ok-bg: #e0f4e7; --warn: #b05a12; --warn-bg: #fff0df; --dlt: #c0392b; --dlt-bg: #ffebeb;
+  --u0: #315cce; --u1: #21844c; --u2: #b05a12; --u3: #7a4fa0; --u4: #8a6a12; --u5: #0f7480; --u6: #b0386a; --u7: #4f5d75;
   --font-body: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: ui-monospace, Menlo, Consolas, monospace;
   color-scheme: light;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #111613; --surface: #19201c; --surface-2: #212a25; --line: #2e3832;
-    --fg: #e5ece7; --muted: #9eaba3; --faint: #77837b;
-    --accent: #6fbf8f; --accent-soft: #1f3528; --on-accent: #0d1a12;
-    --ok: #8fd3a5; --ok-bg: #1d3325; --warn: #f0a979; --warn-bg: #3a2519; --dlt: #e2a3d9; --dlt-bg: #35203a;
-    --u0: #7cc99b; --u1: #8eaaf0; --u2: #ef9a80; --u3: #c4a0e6; --u4: #e0c36a; --u5: #6fd0dc; --u6: #f08fb4; --u7: #a3b1cc;
-    color-scheme: dark;
-  }
+:root[data-theme="dark"] {
+  --bg: #050505; --bg-glow: rgba(31, 122, 63, .16); --surface: #0c1710; --surface-2: #112116; --line: #1f3d29;
+  --fg: #e8f0ea; --muted: #9bb3a2; --faint: #6f8a77;
+  --accent: #e5802e; --accent-hover: #c96a1f; --accent-soft: rgba(229, 128, 46, .14); --on-accent: #0a0a0a;
+  --ok: #3fbf6a; --ok-bg: rgba(63, 191, 106, .14); --warn: #e5802e; --warn-bg: rgba(229, 128, 46, .14); --dlt: #ff6b5c; --dlt-bg: rgba(255, 107, 92, .14);
+  --u0: #3fbf6a; --u1: #8eaaf0; --u2: #e5802e; --u3: #c4a0e6; --u4: #e0c36a; --u5: #6fd0dc; --u6: #f08fb4; --u7: #a3b1cc;
+  color-scheme: dark;
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
-body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.5;
+body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 12% 0%, var(--bg-glow), transparent 27rem) no-repeat, var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.5;
   padding: 0 max(16px, env(safe-area-inset-right)) 24px max(16px, env(safe-area-inset-left)); }
 h1 { margin: 0; font-size: 22px; letter-spacing: -.03em; }
 h2 { margin: 0 0 6px; font-size: 18px; }
@@ -37,6 +37,8 @@ h2 { margin: 0 0 6px; font-size: 18px; }
 .tab, .btn { border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--fg); padding: 6px 14px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
 .tab.active { background: var(--accent-soft); border-color: var(--accent); }
 .btn.primary { background: var(--accent); color: var(--on-accent); border-color: transparent; }
+.btn.primary:hover:not(:disabled) { background: var(--accent-hover); }
+.theme-toggle { display: inline-flex; align-items: center; gap: 6px; }
 .btn.ghost { color: var(--muted); }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
 /* Themed Login button; Google's own button sits invisibly on top so a click still opens Google sign-in. */
