@@ -86,6 +86,35 @@ class ModerationService(
     fun activeBan(userId: String, now: Instant = Instant.now()): UserBan? =
         userBanRepository.findFirstByUserIdAndEndsAtAfterOrderByEndsAtDesc(userId, now)
 
+    /** Bans the user with [handle] on behalf of an admin, escalating along the same ladder as automatic bans. */
+    @Transactional
+    fun manualBan(handle: String, adminEmail: String, now: Instant = Instant.now()): ManualBanResult {
+        val target = jdbcTemplate.query(
+            "SELECT google_sub, handle FROM app_user WHERE lower(handle) = lower(?) FOR UPDATE",
+            { rs, _ -> rs.getString(1) to rs.getString(2) },
+            handle,
+        ).firstOrNull() ?: return ManualBanResult.UnknownHandle
+        val (userId, storedHandle) = target
+        if (isAdmin(userId)) return ManualBanResult.CannotBanAdmin
+
+        val previousBan = userBanRepository.findFirstByUserIdOrderByEndsAtDesc(userId)
+        val decision = policy.decideManualBan(now, previousBan?.toPreviousBan())
+            ?: return ManualBanResult.AlreadyBanned(previousBan!!.endsAt)
+        userBanRepository.save(
+            UserBan(
+                userId = userId,
+                step = decision.step,
+                startsAt = decision.startsAt,
+                endsAt = decision.endsAt,
+                strikesAtBan = null,
+                triggerMessageId = null,
+                createdAt = decision.startsAt,
+                bannedBy = adminEmail,
+            ),
+        )
+        return ManualBanResult.Banned(storedHandle, decision.step, decision.endsAt)
+    }
+
     private fun currentStrikes(userId: String, previousBan: PreviousBan?): Int {
         val since = policy.strikeWindowStart(previousBan)
         return if (since == null) {

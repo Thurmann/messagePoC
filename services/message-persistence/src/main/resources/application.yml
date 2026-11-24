@@ -51,6 +51,9 @@ moderation:
   escalation-window: ${MODERATION_ESCALATION_WINDOW:1d}
   technical-dlt-counts-as-strike: ${MODERATION_TECHNICAL_DLT_COUNTS_AS_STRIKE:false}
 
+presence:
+  online-window: ${PRESENCE_ONLINE_WINDOW:90s}
+
 # Write probe: one acks=all record to a health topic proves Kafka accepts writes (metadata can be stale
 # when the KRaft quorum is lost). Exposed at /api/chat/kafka-status and as the SSE event "kafka".
 kafka-health:

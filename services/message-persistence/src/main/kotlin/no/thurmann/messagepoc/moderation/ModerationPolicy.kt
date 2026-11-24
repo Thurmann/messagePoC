@@ -28,14 +28,26 @@ class ModerationPolicy(
         if (strikes < properties.banThreshold) return null
         if (previousBan != null && now.isBefore(previousBan.endsAt)) return null
 
-        val step = if (previousBan != null && Duration.between(previousBan.endsAt, now) <= properties.escalationWindow) {
+        val step = nextStep(now, previousBan)
+        val duration = properties.banLadder[minOf(step, properties.banLadder.size - 1)]
+        return BanDecision(step = step, startsAt = now, endsAt = now.plus(duration))
+    }
+
+    /** A ban set by an admin: same ladder and escalation as automatic bans, but without a strike threshold. */
+    fun decideManualBan(now: Instant, previousBan: PreviousBan?): BanDecision? {
+        if (previousBan != null && now.isBefore(previousBan.endsAt)) return null
+
+        val step = nextStep(now, previousBan)
+        val duration = properties.banLadder[minOf(step, properties.banLadder.size - 1)]
+        return BanDecision(step = step, startsAt = now, endsAt = now.plus(duration))
+    }
+
+    private fun nextStep(now: Instant, previousBan: PreviousBan?): Int =
+        if (previousBan != null && Duration.between(previousBan.endsAt, now) <= properties.escalationWindow) {
             previousBan.step + 1
         } else {
             0
         }
-        val duration = properties.banLadder[minOf(step, properties.banLadder.size - 1)]
-        return BanDecision(step = step, startsAt = now, endsAt = now.plus(duration))
-    }
 
     fun strikeWindowStart(previousBan: PreviousBan?): Instant? = previousBan?.endsAt
 

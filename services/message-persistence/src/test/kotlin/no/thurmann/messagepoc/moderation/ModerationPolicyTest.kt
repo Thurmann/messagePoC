@@ -95,6 +95,46 @@ class ModerationPolicyTest {
     }
 
     @Test
+    fun `manual ban without a previous ban uses the first ladder step`() {
+        assertEquals(BanDecision(step = 0, startsAt = now, endsAt = now.plus(Duration.ofMinutes(1))), policy.decideManualBan(now, null))
+    }
+
+    @Test
+    fun `manual ban within the escalation window steps up`() {
+        val previous = PreviousBan(step = 0, endsAt = now.minus(Duration.ofHours(1)))
+
+        val decision = policy.decideManualBan(now, previous)
+
+        assertEquals(1, decision?.step)
+        assertEquals(now.plus(Duration.ofMinutes(5)), decision?.endsAt)
+    }
+
+    @Test
+    fun `manual ban after the escalation window resets to the first step`() {
+        val previous = PreviousBan(step = 3, endsAt = now.minus(Duration.ofDays(2)))
+
+        val decision = policy.decideManualBan(now, previous)
+
+        assertEquals(0, decision?.step)
+        assertEquals(now.plus(Duration.ofMinutes(1)), decision?.endsAt)
+    }
+
+    @Test
+    fun `manual ban duration is capped at the last ladder step`() {
+        val previous = PreviousBan(step = 5, endsAt = now.minus(Duration.ofMinutes(10)))
+
+        val decision = policy.decideManualBan(now, previous)
+
+        assertEquals(6, decision?.step)
+        assertEquals(now.plus(Duration.ofHours(24)), decision?.endsAt)
+    }
+
+    @Test
+    fun `no manual ban while a previous ban is still active`() {
+        assertNull(policy.decideManualBan(now, PreviousBan(step = 0, endsAt = now.plus(Duration.ofMinutes(10)))))
+    }
+
+    @Test
     fun `strike window starts at end of previous ban`() {
         val previous = PreviousBan(step = 0, endsAt = now)
 

@@ -5,6 +5,7 @@ import no.thurmann.messagepoc.contracts.MessageAuthor
 import no.thurmann.messagepoc.contracts.MessageSubmittedEvent
 import no.thurmann.messagepoc.contracts.MessageSubmittedPayload
 import no.thurmann.messagepoc.audit.MessageResult
+import no.thurmann.messagepoc.moderation.ManualBanResult
 import no.thurmann.messagepoc.moderation.ModerationService
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -251,5 +252,81 @@ class ModerationServiceIT : AbstractIntegrationTest() {
         service.record(validated("u1"))
         assertEquals(listOf<Int?>(0), strikesAfter("u1"))
         assertEquals(0, service.currentStrikes("u1"))
+    }
+
+    @Test
+    fun `manual ban without history is a one minute step 0 ban`() {
+        createUser("u1", handle = "Alice")
+        val now = Instant.now()
+
+        val result = service.manualBan("alice", "Boss@Test.local", now)
+
+        val banned = result as ManualBanResult.Banned
+        assertEquals("Alice", banned.handle)
+        assertEquals(0, banned.step)
+        assertEquals(now.plus(Duration.ofMinutes(1)), banned.until)
+        val ban = bans("u1").single()
+        assertEquals(0, ban["step"])
+        assertEquals("Boss@Test.local", ban["banned_by"])
+        assertNull(ban["strikes_at_ban"])
+        assertNull(ban["trigger_message_id"])
+        assertTrue(service.activeBan("u1") != null)
+    }
+
+    @Test
+    fun `manual ban after a recently ended ban escalates to five minutes`() {
+        createUser("u1", handle = "alice")
+        val ended = Instant.now().minus(Duration.ofHours(1))
+        jdbc.update(
+            "INSERT INTO user_ban (user_id, step, starts_at, ends_at, created_at) VALUES ('u1', 0, ?, ?, ?)",
+            java.sql.Timestamp.from(ended.minusSeconds(60)), java.sql.Timestamp.from(ended), java.sql.Timestamp.from(ended.minusSeconds(60)),
+        )
+        val now = Instant.now()
+
+        val banned = service.manualBan("alice", ADMIN_EMAIL, now) as ManualBanResult.Banned
+
+        assertEquals(1, banned.step)
+        assertEquals(now.plus(Duration.ofMinutes(5)), banned.until)
+        assertEquals(2, bans("u1").size)
+    }
+
+    @Test
+    fun `manual ban of an admin is refused`() {
+        createUser("adm", email = ADMIN_EMAIL, handle = "boss")
+
+        assertEquals(ManualBanResult.CannotBanAdmin, service.manualBan("boss", ADMIN_EMAIL))
+        assertTrue(bans("adm").isEmpty())
+    }
+
+    @Test
+    fun `manual ban of an already banned user reports the active ban`() {
+        createUser("u1", handle = "alice")
+        val first = service.manualBan("alice", ADMIN_EMAIL) as ManualBanResult.Banned
+
+        val second = service.manualBan("alice", ADMIN_EMAIL)
+
+        assertEquals(ManualBanResult.AlreadyBanned(first.until), second)
+        assertEquals(1, bans("u1").size)
+    }
+
+    @Test
+    fun `manual ban of an unknown handle is reported`() {
+        assertEquals(ManualBanResult.UnknownHandle, service.manualBan("nobody", ADMIN_EMAIL))
+    }
+
+    @Test
+    fun `concurrent manual bans create exactly one ban`() {
+        createUser("u1", handle = "alice")
+        val threads = 2
+        val pool = Executors.newFixedThreadPool(threads)
+        val start = CountDownLatch(1)
+        val futures = (1..threads).map { pool.submit<ManualBanResult> { start.await(); service.manualBan("alice", ADMIN_EMAIL) } }
+        start.countDown()
+        val results = futures.map { it.get(30, TimeUnit.SECONDS) }
+        pool.shutdown()
+
+        assertEquals(1, bans("u1").size)
+        assertEquals(1, results.count { it is ManualBanResult.Banned })
+        assertEquals(1, results.count { it is ManualBanResult.AlreadyBanned })
     }
 }
