@@ -201,10 +201,13 @@ The adjacent audit panel reads the 50 newest result entries from `message-audit`
 through Loki at `http://localhost:8083/api/audit-logs`.
 
 The validation service sends each submitted text to Jev and asks:
-“Does the text contain any profanities, cursing or very rude descriptions?”
-Jev answers this as a yes/no (`noul`) question and returns the probability of
-“yes” from 0 to 1. Probabilities at or below `0.75` are accepted;
-probabilities above `0.75` through `0.95` are rejected; probabilities above
+“Is this chat message offensive?” Jev is told to judge the meaning and intent of
+the whole message rather than individual swear words: insults, harassment,
+threats, hate speech and very vulgar descriptions count as offensive, while
+swear words used as intensifiers or exclamations (“jævla bra dag”, “helvete”)
+do not. Jev answers this as a yes/no (`noul`) question and returns the probability of
+“yes” from 0 to 1. Probabilities at or below `0.65` are accepted;
+probabilities above `0.65` through `0.95` are rejected; probabilities above
 `0.95` are sent to the DLT. The thresholds can be changed with
 `MODERATION_REJECT_THRESHOLD` and `MODERATION_DLT_THRESHOLD`.
 Submitted text is sent to the TypeSafe API for scoring; avoid sending sensitive

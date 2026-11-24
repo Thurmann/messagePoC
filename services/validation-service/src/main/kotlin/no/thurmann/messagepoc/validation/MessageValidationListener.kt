@@ -124,7 +124,7 @@ internal fun buildResultEvent(
 @Component
 class ValidationRule(
     private val profanityScorer: ProfanityScorer,
-    @org.springframework.beans.factory.annotation.Value("\${moderation.reject-threshold:0.75}")
+    @org.springframework.beans.factory.annotation.Value("\${moderation.reject-threshold:0.65}")
     val rejectThreshold: Double,
     @org.springframework.beans.factory.annotation.Value("\${moderation.dlt-threshold:0.95}")
     private val dltThreshold: Double,

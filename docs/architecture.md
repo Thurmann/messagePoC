@@ -11,7 +11,7 @@ POST /api/messages
                                            |
                     +------+----------------+
                     |                       |
-            prob <= 0.75          prob > 0.75
+            prob <= 0.65          prob > 0.65
                     |               +-------+--------+
                     |               |                |
                     |        prob <= 0.95       prob > 0.95
@@ -34,8 +34,8 @@ POST /api/messages
 
 `messageId` is used as the Kafka record key so all events for one message are
 routed to the same partition. The validation service asks Jev a yes/no (`noul`)
-profanity question and uses the returned probability on the 0–1 scale. Probabilities
-through `0.75` produce `MessageValidated`; probabilities above `0.75` through `0.95`
+"is this message offensive" question and uses the returned probability on the 0–1 scale. Probabilities
+through `0.65` produce `MessageValidated`; probabilities above `0.65` through `0.95`
 produce `MessageRejected`; probabilities above `0.95` go to
 the submitted DLT. Technical processing failures also go to that DLT after
 Kafka listener retries.

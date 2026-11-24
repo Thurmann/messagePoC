@@ -46,7 +46,7 @@ class JevProfanityScorerTest {
     @Test
     fun `sends a noul question and returns the yes probability`() {
         val text = "hello there"
-        responseBody.set("""{"answers":{"profanity":{"type":"noul","noul":0.83}}}""")
+        responseBody.set("""{"answers":{"offensive":{"type":"noul","noul":0.83}}}""")
 
         val score = scorer.score(text)
 
@@ -56,7 +56,7 @@ class JevProfanityScorerTest {
         val body = objectMapper.readTree(capturedBody.get())
         assertEquals("jev-latest", body.path("model").asString())
         assertEquals(text, body.path("state").asString())
-        val question = body.path("questions").path("profanity")
+        val question = body.path("questions").path("offensive")
         assertEquals("noul", question.path("type").asString())
         assertTrue(question.path("criteria").has("true"))
         assertTrue(question.path("criteria").has("false"))
@@ -64,14 +64,14 @@ class JevProfanityScorerTest {
 
     @Test
     fun `response without a noul probability is rejected`() {
-        responseBody.set("""{"answers":{"profanity":{"type":"score","score":0.5}}}""")
+        responseBody.set("""{"answers":{"offensive":{"type":"score","score":0.5}}}""")
 
         assertFailsWith<IllegalStateException> { scorer.score("hello") }
     }
 
     @Test
     fun `out-of-range noul probability is rejected`() {
-        responseBody.set("""{"answers":{"profanity":{"type":"noul","noul":1.5}}}""")
+        responseBody.set("""{"answers":{"offensive":{"type":"noul","noul":1.5}}}""")
 
         assertFailsWith<IllegalStateException> { scorer.score("hello") }
     }

@@ -34,7 +34,7 @@ management:
         enabled: true
 
 moderation:
-  reject-threshold: ${MODERATION_REJECT_THRESHOLD:0.75}
+  reject-threshold: ${MODERATION_REJECT_THRESHOLD:0.65}
   dlt-threshold: ${MODERATION_DLT_THRESHOLD:0.95}
 
 logging:
