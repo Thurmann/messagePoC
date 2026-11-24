@@ -54,5 +54,10 @@ spec:
       transaction.state.log.min.isr: 2
       default.replication.factor: 3
       min.insync.replicas: 2
+      # Topics come only from KafkaTopic resources. With auto-create on, an app
+      # that starts before the topic operator creates a 1-partition topic; the
+      # operator then grows it to 3, but consumers miss the new partitions until
+      # their next metadata refresh (5 min), so messages there sit unprocessed.
+      auto.create.topics.enable: false
   entityOperator:
     topicOperator: {}
