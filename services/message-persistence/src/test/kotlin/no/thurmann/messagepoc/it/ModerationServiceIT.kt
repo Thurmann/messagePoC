@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import java.time.Duration
 import java.time.Instant
+import java.time.temporal.ChronoUnit
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
@@ -257,7 +258,7 @@ class ModerationServiceIT : AbstractIntegrationTest() {
     @Test
     fun `manual ban without history is a one minute step 0 ban`() {
         createUser("u1", handle = "Alice")
-        val now = Instant.now()
+        val now = Instant.now().truncatedTo(ChronoUnit.MICROS) // Postgres precision
 
         val result = service.manualBan("alice", "Boss@Test.local", now)
 
@@ -281,7 +282,7 @@ class ModerationServiceIT : AbstractIntegrationTest() {
             "INSERT INTO user_ban (user_id, step, starts_at, ends_at, created_at) VALUES ('u1', 0, ?, ?, ?)",
             java.sql.Timestamp.from(ended.minusSeconds(60)), java.sql.Timestamp.from(ended), java.sql.Timestamp.from(ended.minusSeconds(60)),
         )
-        val now = Instant.now()
+        val now = Instant.now().truncatedTo(ChronoUnit.MICROS)
 
         val banned = service.manualBan("alice", ADMIN_EMAIL, now) as ManualBanResult.Banned
 

@@ -431,6 +431,9 @@
   function renderUsers() {
     var me = state.me, myHandle = me ? me.handle : null, viewerAdmin = !!(me && me.isAdmin);
     var list = els['users-list'], others = 0;
+    // the list is rebuilt on every poll; keep keyboard focus on the same Ban button
+    var focused = document.activeElement && list.contains(document.activeElement)
+      ? document.activeElement.getAttribute('aria-label') : null;
     list.textContent = '';
     presence.banSpans = [];
     presence.users.forEach(function (u) {
@@ -456,6 +459,12 @@
       }
       list.appendChild(li);
     });
+    if (focused) {
+      var again = Array.prototype.find.call(list.querySelectorAll('button'), function (b) {
+        return b.getAttribute('aria-label') === focused;
+      });
+      if (again) again.focus();
+    }
     els['users-count'].textContent = String(presence.users.length);
     show(els['users-empty'], others === 0);
     if (presence.tickTimer) { clearInterval(presence.tickTimer); presence.tickTimer = null; }
@@ -500,7 +509,7 @@
       if (gen === presence.gen) renderUsers();
     }
   }
-  window.addEventListener('pagehide', function () { if (state.token && presence.running) sendOffline(); });
+  // Closing or reloading a tab does not mark the user offline (another tab may still be open): the online window expires.
   window.addEventListener('pageshow', function (e) {
     if (e.persisted && state.token && presence.running) { heartbeat(presence.gen, true); }
   });

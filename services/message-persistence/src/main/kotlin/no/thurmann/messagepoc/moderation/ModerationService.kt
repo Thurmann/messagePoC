@@ -11,6 +11,7 @@ import org.springframework.jdbc.core.RowCallbackHandler
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
+import java.time.temporal.ChronoUnit
 
 @Service
 class ModerationService(
@@ -98,7 +99,8 @@ class ModerationService(
         if (isAdmin(userId)) return ManualBanResult.CannotBanAdmin
 
         val previousBan = userBanRepository.findFirstByUserIdOrderByEndsAtDesc(userId)
-        val decision = policy.decideManualBan(now, previousBan?.toPreviousBan())
+        // Postgres stores microseconds; truncate so the returned end time equals the stored one (Linux clocks have nanoseconds)
+        val decision = policy.decideManualBan(now.truncatedTo(ChronoUnit.MICROS), previousBan?.toPreviousBan())
             ?: return ManualBanResult.AlreadyBanned(previousBan!!.endsAt)
         userBanRepository.save(
             UserBan(
