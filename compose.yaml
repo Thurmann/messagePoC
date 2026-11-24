@@ -130,6 +130,7 @@ services:
 
   message-api:
     image: message-poc/message-api:local
+    pull_policy: build
     build:
       context: .
       args:
@@ -161,6 +162,7 @@ services:
 
   validation-service:
     image: message-poc/validation-service:local
+    pull_policy: build
     build:
       context: .
       args:
@@ -183,6 +185,7 @@ services:
 
   message-persistence:
     image: message-poc/message-persistence:local
+    pull_policy: build
     build:
       context: .
       args:
@@ -217,6 +220,7 @@ services:
 
   message-audit:
     image: message-poc/message-audit:local
+    pull_policy: build
     build:
       context: .
       args:
