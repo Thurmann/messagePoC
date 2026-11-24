@@ -20,6 +20,23 @@ Tags pushed with that token do not start other workflows, which is why CI calls
 `release.yml` directly instead of relying on its tag trigger. If a tag ruleset
 protects `v*` tags, allow GitHub Actions to bypass it.
 
+### Merge several pull requests with one build
+
+To merge several pull requests in a row without building `main` after each one,
+put `[skip bygg]` (or `[bygg skip]`) in a commit message of every pull request
+except the last. When a push to `main` contains a commit with the marker, CI skips
+the build, image, manifest and script jobs, so nothing is tagged, released or
+deployed. Merge the last pull request without the marker: its run builds `main`
+with all the changes and releases them.
+
+- Pull requests always build; the marker only has an effect on pushes to `main`.
+- It works with every merge method. With squash or merge commits, the marker
+  can go in the merge commit message instead; with rebase, put it in a commit on
+  the branch.
+- The skipped commits are only built on their pull request branches, so a
+  conflict between two pull requests shows up in the final build.
+- If the last merge skipped by mistake, run **CI** on `main` from the Actions tab.
+
 A tag on `main` pushed by hand is still released, which is how to cut a
 prerelease. CI does not tag a commit that already has a release tag:
 
