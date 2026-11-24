@@ -202,9 +202,10 @@ through Loki at `http://localhost:8083/api/audit-logs`.
 
 The validation service sends each submitted text to Jev and asks:
 “Does the text contain any profanities, cursing or very rude descriptions?”
-Jev returns a score from 0 to 1. Scores at or below `0.70` are accepted;
-scores above `0.70` through `0.95` are rejected; scores above `0.95` are sent
-to the DLT. The thresholds can be changed with
+Jev answers this as a yes/no (`noul`) question and returns the probability of
+“yes” from 0 to 1. Probabilities at or below `0.75` are accepted;
+probabilities above `0.75` through `0.95` are rejected; probabilities above
+`0.95` are sent to the DLT. The thresholds can be changed with
 `MODERATION_REJECT_THRESHOLD` and `MODERATION_DLT_THRESHOLD`.
 Submitted text is sent to the TypeSafe API for scoring; avoid sending sensitive
 content unless that processing is appropriate for your data.
