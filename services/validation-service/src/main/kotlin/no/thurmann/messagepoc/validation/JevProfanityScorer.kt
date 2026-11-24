@@ -36,8 +36,8 @@ class JevProfanityScorer(
                         "type" to "noul",
                         "instructions" to PROFANITY_QUESTION,
                         "criteria" to mapOf(
-                            "true" to "The text contains profanity, cursing, or very rude descriptions.",
-                            "false" to "The text contains no profanity, cursing, or very rude descriptions.",
+                            "true" to OFFENSIVE_CRITERION,
+                            "false" to NOT_OFFENSIVE_CRITERION,
                         ),
                     ),
                 ),
@@ -77,8 +77,21 @@ class JevProfanityScorer(
     }
 
     private companion object {
-        const val PROFANITY_QUESTION_ID = "profanity"
+        // Ask whether the message is offensive, not whether it contains swear words:
+        // Norwegian intensifiers such as "jævla bra dag" are common and harmless.
+        const val PROFANITY_QUESTION_ID = "offensive"
         const val PROFANITY_QUESTION =
-            "Does the text contain any profanities, cursing or very rude descriptions?"
+            "Is this chat message offensive? Judge the meaning and intent of the whole " +
+                "message, not whether individual swear words appear. The message may be " +
+                "written in any language, including Norwegian."
+        const val OFFENSIVE_CRITERION =
+            "The message is offensive: it insults, demeans, harasses or threatens a " +
+                "person or group (for example calling someone an idiot), contains hate " +
+                "speech or slurs, or contains sexually explicit or very vulgar descriptions."
+        const val NOT_OFFENSIVE_CRITERION =
+            "The message is not offensive. Swear words used as intensifiers or " +
+                "exclamations that are not aimed at anyone, such as 'damn good day', " +
+                "'damn fine guy', 'hell!' or cursing at a thing or situation, are not " +
+                "offensive on their own."
     }
 }
