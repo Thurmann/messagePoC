@@ -27,7 +27,7 @@
   var els = {};
   ['tabs', 'tab-chat', 'tab-log', 'conn', 'me', 'me-handle', 'signout', 'login', 'gsi-button', 'setup', 'warn-banner',
     'ban-banner', 'view-chat', 'view-log', 'lines', 'send-error', 'composer', 'text', 'send', 'rail', 'cards',
-    'rail-empty', 'audit-btn', 'audit', 'log-body', 'handle-dialog', 'handle-form', 'handle-input',
+    'users', 'users-count', 'users-list', 'users-empty', 'users-error', 'rail-empty', 'audit-btn', 'audit', 'log-body', 'handle-dialog', 'handle-form', 'handle-input',
     'handle-error', 'handle-cancel', 'handle-save'].forEach(function (id) { els[id] = $(id); });
 
   // ---------- helpers ----------
@@ -306,6 +306,8 @@
       setStatus(p, 'not confirmed – it may still appear');
     });
     state.lastFailed = null;
+    if (state.token && presence.running) sendOffline();
+    stopPresence();
     setToken(null);
     state.me = null;
     if (window.google && google.accounts && google.accounts.id) google.accounts.id.disableAutoSelect();
@@ -353,8 +355,155 @@
     show(els.rail, admin);
     els['view-chat'].classList.toggle('no-rail', !admin);
     if (admin) startAdmin(); else { stopAdmin(); switchTab('chat'); }
+    if (signed && me.handle) startPresence(); else stopPresence();
     updateComposer();
   }
+
+  // ---------- presence / online users ----------
+  var presence = { running: false, gen: 0, hbTimer: null, pollTimer: null, polling: 0, tickTimer: null,
+    users: [], banning: {}, banSpans: [] };
+
+  function sendOffline() {
+    try {
+      fetch('/api/me/presence', { method: 'DELETE', headers: authHeaders(), keepalive: true }).catch(function () {});
+    } catch (e) { /* ignore */ }
+  }
+  function startPresence() {
+    if (presence.running) return;
+    presence.running = true;
+    var gen = ++presence.gen;
+    show(els.users, true);
+    els['view-chat'].classList.remove('no-users');
+    heartbeat(gen, true);
+    presence.hbTimer = setInterval(function () { heartbeat(gen, false); }, 30000);
+    presence.pollTimer = setInterval(function () { pollUsers(gen); }, 15000);
+  }
+  function stopPresence() {
+    if (presence.hbTimer) clearInterval(presence.hbTimer);
+    if (presence.pollTimer) clearInterval(presence.pollTimer);
+    if (presence.tickTimer) clearInterval(presence.tickTimer);
+    presence.hbTimer = presence.pollTimer = presence.tickTimer = null;
+    presence.running = false;
+    presence.gen++; // invalidates in-flight responses
+    presence.users = [];
+    presence.banning = {};
+    presence.banSpans = [];
+    els['users-list'].textContent = '';
+    setError(els['users-error'], '');
+    show(els.users, false);
+    els['view-chat'].classList.add('no-users');
+  }
+  async function heartbeat(gen, first) {
+    try {
+      var res = await authedFetch('/api/me/presence', { method: 'POST', cache: 'no-store' });
+      if (gen !== presence.gen) return;
+      if (res.status === 401) { signOut(); return; }
+      if (!res.ok) return;
+      var body = null;
+      try { body = await res.json(); } catch (e) { /* no body */ }
+      if (gen !== presence.gen) return;
+      if (body && body.ban) {
+        if (state.me) state.me.ban = body.ban;
+        startBan(body.ban.until, body.ban.remainingSeconds);
+      }
+      if (first) pollUsers(gen);
+    } catch (e) { /* retry on the next beat */ }
+  }
+  async function pollUsers(gen) {
+    if (gen !== presence.gen || presence.polling === gen) return;
+    presence.polling = gen;
+    try {
+      var res = await authedFetch('/api/users/online', { cache: 'no-store' });
+      if (gen !== presence.gen) return;
+      if (res.status === 401) { signOut(); return; }
+      if (!res.ok) return;
+      var list = await res.json();
+      if (gen !== presence.gen) return;
+      presence.users = Array.isArray(list) ? list : [];
+      renderUsers();
+    } catch (e) { /* keep the previous list */ }
+    finally { if (presence.polling === gen) presence.polling = 0; }
+  }
+  function bannedLeft(u) {
+    var t = u.bannedUntil ? Date.parse(u.bannedUntil) : NaN;
+    return isNaN(t) ? 0 : (t - Date.now()) / 1000;
+  }
+  function renderUsers() {
+    var me = state.me, myHandle = me ? me.handle : null, viewerAdmin = !!(me && me.isAdmin);
+    var list = els['users-list'], others = 0;
+    list.textContent = '';
+    presence.banSpans = [];
+    presence.users.forEach(function (u) {
+      if (!u || !u.handle) return;
+      var self = u.handle === myHandle;
+      if (!self) others++;
+      var li = el('li');
+      li.appendChild(el('span', 'h ' + colorClass(u.handle), u.handle));
+      if (self) li.appendChild(el('span', 'you', '(you)'));
+      if (u.isAdmin) li.appendChild(el('span', 'tag', 'admin'));
+      var left = bannedLeft(u);
+      if (left > 0) {
+        var b = el('span', 'banned', 'banned · ' + fmtRemaining(left));
+        li.appendChild(b);
+        presence.banSpans.push({ span: b, until: Date.parse(u.bannedUntil) });
+      } else if (viewerAdmin && !self && !u.isAdmin) {
+        var btn = el('button', 'btn small danger', 'Ban');
+        btn.type = 'button';
+        btn.disabled = !!presence.banning[u.handle];
+        btn.setAttribute('aria-label', 'Ban ' + u.handle);
+        btn.addEventListener('click', function () { banUser(u.handle); });
+        li.appendChild(btn);
+      }
+      list.appendChild(li);
+    });
+    els['users-count'].textContent = String(presence.users.length);
+    show(els['users-empty'], others === 0);
+    if (presence.tickTimer) { clearInterval(presence.tickTimer); presence.tickTimer = null; }
+    if (presence.banSpans.length) presence.tickTimer = setInterval(tickBans, 1000);
+  }
+  function tickBans() {
+    var expired = false;
+    presence.banSpans.forEach(function (b) {
+      var left = (b.until - Date.now()) / 1000;
+      if (left <= 0) expired = true; else b.span.textContent = 'banned · ' + fmtRemaining(left);
+    });
+    if (expired) renderUsers();
+  }
+  async function banUser(handle) {
+    if (presence.banning[handle]) return;
+    if (!window.confirm('Ban @' + handle + '? The ban length follows the ladder (1 min, 5 min, 30 min, …).')) return;
+    var gen = presence.gen;
+    presence.banning[handle] = true;
+    renderUsers();
+    setError(els['users-error'], '');
+    try {
+      var res = await authedFetch('/api/admin/users/ban', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ handle: handle }),
+      });
+      if (gen !== presence.gen) return;
+      if (res.status === 401) { signOut(); return; }
+      var err = {};
+      if (!res.ok) { try { err = await res.json(); } catch (e) { /* no body */ } }
+      if (gen !== presence.gen) return;
+      if (res.ok) { pollUsers(gen); }
+      else if (res.status === 403) { setError(els['users-error'], 'You are not allowed to ban users.'); refreshMe(); }
+      else if (res.status === 404) { setError(els['users-error'], '@' + handle + ' no longer exists.'); pollUsers(gen); }
+      else if (res.status === 409 && err.error === 'CANNOT_BAN_ADMIN') setError(els['users-error'], 'Admins cannot be banned.');
+      else if (res.status === 409 && err.error === 'ALREADY_BANNED') { setError(els['users-error'], '@' + handle + ' is already banned.'); pollUsers(gen); }
+      else setError(els['users-error'], 'Could not ban @' + handle + ' (HTTP ' + res.status + ').');
+    } catch (e) {
+      if (gen === presence.gen) setError(els['users-error'], 'Network error. Try again.');
+    } finally {
+      delete presence.banning[handle];
+      if (gen === presence.gen) renderUsers();
+    }
+  }
+  window.addEventListener('pagehide', function () { if (state.token && presence.running) sendOffline(); });
+  window.addEventListener('pageshow', function (e) {
+    if (e.persisted && state.token && presence.running) { heartbeat(presence.gen, true); }
+  });
 
   // ---------- ban countdown ----------
   function fmtRemaining(s) {

@@ -101,6 +101,15 @@ Strikes and bans:
 - Strikes count from the end of your latest ban, so the counter resets when a
   ban ends.
 
+Signed-in users with a handle see an online users pane to the left of the chat.
+You count as online while your browser sends a presence heartbeat (every 30
+seconds) and the last one is at most 90 seconds old (`PRESENCE_ONLINE_WINDOW`).
+Signing out removes you immediately. Admins also see who is banned and can ban a
+user manually from the pane. A manual ban uses the same ladder and escalation as
+an automatic one. Admins cannot be banned, and a user who is already banned
+cannot be banned again. A manual ban counts as the user's latest ban, so their
+strikes reset when it ends, and `banned_by` records the admin who set it.
+
 Admins (addresses in `ADMIN_EMAILS`, or added to the `admin_user` table) see an
 admin rail with the moderation log, which lists rejected and DLT results (not validated ones), with
 score, strike state, and the current ban state. The log is also streamed live.
@@ -133,6 +142,7 @@ Defaults apply when a variable is unset.
 | `MODERATION_BAN_THRESHOLD` | message-persistence | `6` | Strikes that trigger a ban |
 | `MODERATION_BAN_LADDER` | message-persistence | `1m,5m,30m,2h,12h,24h` | Ban durations by step; the last step repeats |
 | `MODERATION_ESCALATION_WINDOW` | message-persistence | `1d` | Window after a ban in which the next ban escalates |
+| `PRESENCE_ONLINE_WINDOW` | message-persistence | `90s` | How recently a heartbeat must have arrived for a user to count as online |
 | `MODERATION_TECHNICAL_DLT_COUNTS_AS_STRIKE` | message-persistence | `false` | Whether technical DLT failures count as strikes. **Warning:** if set to `true`, a missing `TYPESAFE_API_KEY` or a Jev outage sends every message to the DLT and bans users after 6 messages |
 | `KAFKA_HEALTH_ENABLED` | message-persistence | `true` | Runs the Kafka write probe that drives the chat's connection status. Set to `false` to turn it off |
 
@@ -151,6 +161,10 @@ reads the handle and ban state from that database.
 | message-persistence | `GET /api/chat/kafka-status` | public | Kafka write probe state: `{status, since, checkedAt}` (`UNKNOWN`, `UP` or `DOWN`) |
 | message-persistence | `GET /api/me` | Bearer ID token | Your handle, strikes, warning and ban state; creates your user record |
 | message-persistence | `PUT /api/me/handle` | Bearer ID token | Choose your handle once (`^[A-Za-z0-9_]{3,20}$`) |
+| message-persistence | `POST /api/me/presence` | Bearer ID token | Presence heartbeat; returns `{ban}` (`null` if not banned) |
+| message-persistence | `DELETE /api/me/presence` | Bearer ID token | Mark yourself offline (`204`) |
+| message-persistence | `GET /api/users/online` | Bearer ID token | Online users `[{handle}]`; admins also get `isAdmin` and `bannedUntil` |
+| message-persistence | `POST /api/admin/users/ban` | admin | Ban a user by `{handle}` along the ladder. Errors: `404` (`UNKNOWN_HANDLE`), `409` (`CANNOT_BAN_ADMIN`, `ALREADY_BANNED`), `400` (`INVALID_HANDLE`) |
 | message-persistence | `GET /api/admin/moderation-log?limit=200` | admin | Moderation log |
 | message-persistence | `GET /api/admin/stream` | admin | Live moderation rows (SSE) |
 | message-persistence | `GET /api/audit-logs` | admin | Recent `message-audit` entries from Loki |
