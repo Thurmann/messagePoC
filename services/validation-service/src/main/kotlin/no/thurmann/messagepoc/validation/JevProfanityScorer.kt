@@ -33,11 +33,11 @@ class JevProfanityScorer(
                 "state" to text,
                 "questions" to mapOf(
                     PROFANITY_QUESTION_ID to mapOf(
-                        "type" to "score",
+                        "type" to "noul",
                         "instructions" to PROFANITY_QUESTION,
-                        "criteria" to listOf(
-                            "The text contains no profanity, cursing, or very rude descriptions.",
-                            "The text contains profanity, cursing, or very rude descriptions.",
+                        "criteria" to mapOf(
+                            "true" to "The text contains profanity, cursing, or very rude descriptions.",
+                            "false" to "The text contains no profanity, cursing, or very rude descriptions.",
                         ),
                     ),
                 ),
@@ -63,15 +63,15 @@ class JevProfanityScorer(
             "Jev profanity scoring request returned HTTP ${response.statusCode()}"
         }
 
-        val scoreNode = objectMapper.readTree(response.body())
+        val probabilityNode = objectMapper.readTree(response.body())
             .path("answers")
             .path(PROFANITY_QUESTION_ID)
-            .path("score")
-        check(scoreNode.isNumber) { "Jev response did not contain a numeric profanity score" }
+            .path("noul")
+        check(probabilityNode.isNumber) { "Jev response did not contain a numeric profanity probability" }
 
-        return scoreNode.doubleValue().also { score ->
-            check(score.isFinite() && score in 0.0..1.0) {
-                "Jev returned a profanity score outside the expected 0–1 range"
+        return probabilityNode.doubleValue().also { probability ->
+            check(probability.isFinite() && probability in 0.0..1.0) {
+                "Jev returned a profanity probability outside the expected 0–1 range"
             }
         }
     }
