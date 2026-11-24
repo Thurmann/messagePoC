@@ -25,7 +25,7 @@
 
   var $ = function (id) { return document.getElementById(id); };
   var els = {};
-  ['tabs', 'tab-chat', 'tab-log', 'conn', 'me', 'me-handle', 'signout', 'login', 'gsi-button', 'setup', 'warn-banner',
+  ['tabs', 'tab-chat', 'tab-log', 'conn', 'version', 'me', 'me-handle', 'signout', 'login', 'gsi-button', 'setup', 'warn-banner',
     'ban-banner', 'view-chat', 'view-log', 'lines', 'send-error', 'composer', 'text', 'send', 'rail', 'cards',
     'users', 'users-count', 'users-list', 'users-empty', 'users-error', 'rail-empty', 'audit-btn', 'audit', 'log-body', 'handle-dialog', 'handle-form', 'handle-input',
     'handle-error', 'handle-cancel', 'handle-save'].forEach(function (id) { els[id] = $(id); });
@@ -213,6 +213,12 @@
     els.conn.classList.toggle('on', !!state.sse && !warn);
     els.conn.classList.toggle('warn', warn);
     updateComposer();
+  }
+  function renderVersion() {
+    var version = state.config && state.config.version;
+    els.version.textContent = version ? 'v' + version : '';
+    els.version.title = version ? 'Running version ' + version : '';
+    show(els.version, !!version);
   }
   function setKafka(status) {
     state.kafka = status === 'UP' || status === 'DOWN' ? status : 'UNKNOWN';
@@ -820,6 +826,7 @@
       var res = await fetch('/api/config', { cache: 'no-store' });
       if (res.ok) state.config = await res.json();
     } catch (e) { /* use defaults */ }
+    renderVersion();
 
     // public stream; after every (re)connect (and on resync) re-fetch history, dedupe by messageId
     startSse('/api/chat/stream', false, function (name, ev) {
