@@ -126,6 +126,16 @@ increases when a new ban starts within the escalation window after the previous 
 The ladder is `MODERATION_BAN_LADDER`. The defaults are documented in
 `deploy/kubernetes/README.md` and the root `README.md`.
 
+Admins can also ban a user by hand (`POST /api/admin/users/ban`). It uses the same
+ladder and escalation, is rejected for admins and for users already banned, and
+is stored as a `user_ban` row with `banned_by` set to the admin. Since it is the
+latest ban, strikes count from its end.
+
+Presence is a `last_seen` timestamp on the user row. The browser sends
+`POST /api/me/presence` every 30 s and `DELETE` on sign-out; a user is online if
+seen within `PRESENCE_ONLINE_WINDOW` (90 s). `GET /api/users/online` feeds the
+users pane and adds `isAdmin` and `bannedUntil` for admin callers.
+
 A result whose `messageId` is already stored is ignored, even if its `eventId`
 differs, so a resent message produces no second row, strike, ban or SSE event.
 `message-audit` still logs every result it receives, so the same `messageId` can
