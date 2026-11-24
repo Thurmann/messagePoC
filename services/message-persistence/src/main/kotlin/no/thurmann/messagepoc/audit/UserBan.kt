@@ -38,6 +38,9 @@ open class UserBan(
 
     @field:Column(name = "created_at", nullable = false)
     open var createdAt: Instant = Instant.EPOCH,
+
+    @field:Column(name = "banned_by", nullable = true)
+    open var bannedBy: String? = null,
 )
 
 interface UserBanRepository : JpaRepository<UserBan, Long> {

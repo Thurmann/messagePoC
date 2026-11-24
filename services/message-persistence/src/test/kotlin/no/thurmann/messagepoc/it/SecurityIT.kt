@@ -4,13 +4,16 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.http.MediaType
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.delete
 import org.springframework.test.web.servlet.get
+import org.springframework.test.web.servlet.post
 import org.springframework.test.web.servlet.put
 import java.time.Instant
 import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class SecurityIT : AbstractIntegrationTest() {
@@ -132,5 +135,130 @@ class SecurityIT : AbstractIntegrationTest() {
             jsonPath("$.warning") { value(true) }
             jsonPath("$.ban") { doesNotExist() }
         }
+    }
+
+    private fun presence(auth: String) = mvc.post("/api/me/presence") { header("Authorization", auth) }
+
+    private fun online(auth: String) = mvc.get("/api/users/online") { header("Authorization", auth) }
+
+    private fun setHandle(auth: String, handle: String) {
+        mvc.put("/api/me/handle") { header("Authorization", auth); contentType = MediaType.APPLICATION_JSON; content = """{"handle":"$handle"}""" }
+            .andExpect { status { isOk() } }
+    }
+
+    /** Registers the user like the frontend does: GET /api/me, pick a handle, then heartbeat. */
+    private fun signIn(sub: String, handle: String, auth: String = user(sub)) {
+        mvc.get("/api/me") { header("Authorization", auth) }.andExpect { status { isOk() } }
+        setHandle(auth, handle)
+        presence(auth).andExpect { status { isOk() } }
+    }
+
+    @Test
+    fun `online users requires authentication`() {
+        mvc.get("/api/users/online").andExpect { status { isUnauthorized() } }
+        mvc.post("/api/me/presence").andExpect { status { isUnauthorized() } }
+    }
+
+    @Test
+    fun `a user with a handle who sent presence is listed without admin fields for plain callers`() {
+        signIn("p1", "Alice")
+        signIn("p2", "bob")
+        mvc.get("/api/me") { header("Authorization", user("p3")) }.andExpect { status { isOk() } }
+        presence(user("p3")).andExpect { status { isOk() } }
+
+        val body = online(user("p2")).andExpect {
+            status { isOk() }
+            jsonPath("$.length()") { value(2) }
+            jsonPath("$[0].handle") { value("Alice") }
+            jsonPath("$[1].handle") { value("bob") }
+            jsonPath("$[0].isAdmin") { doesNotExist() }
+            jsonPath("$[0].bannedUntil") { doesNotExist() }
+        }.andReturn().response.contentAsString
+        assertFalse(body.contains("isAdmin") || body.contains("bannedUntil"), body)
+    }
+
+    @Test
+    fun `admin sees isAdmin and bannedUntil for online users`() {
+        signIn("p1", "alice")
+        signIn("admin-sub", "boss", admin())
+        mvc.post("/api/admin/users/ban") {
+            header("Authorization", admin()); contentType = MediaType.APPLICATION_JSON; content = """{"handle":"alice"}"""
+        }.andExpect { status { isOk() } }
+
+        online(admin()).andExpect {
+            status { isOk() }
+            jsonPath("$[0].handle") { value("alice") }
+            jsonPath("$[0].isAdmin") { value(false) }
+            jsonPath("$[0].bannedUntil") { exists() }
+            jsonPath("$[1].handle") { value("boss") }
+            jsonPath("$[1].isAdmin") { value(true) }
+            jsonPath("$[1].bannedUntil") { doesNotExist() }
+        }
+    }
+
+    @Test
+    fun `stale users are not listed and leaving removes a user`() {
+        signIn("p1", "alice")
+        signIn("p2", "bob")
+        signIn("p3", "carol")
+        jdbc.update("UPDATE app_user SET last_seen_at = now() - interval '10 minutes' WHERE google_sub = 'p1'")
+
+        online(user("p2")).andExpect { jsonPath("$.length()") { value(2) }; jsonPath("$[0].handle") { value("bob") } }
+
+        mvc.delete("/api/me/presence") { header("Authorization", user("p2")) }.andExpect { status { isNoContent() } }
+        assertNull(jdbc.queryForObject("SELECT last_seen_at FROM app_user WHERE google_sub = 'p2'", java.sql.Timestamp::class.java))
+        online(user("p3")).andExpect { jsonPath("$.length()") { value(1) }; jsonPath("$[0].handle") { value("carol") } }
+    }
+
+    @Test
+    fun `presence for a user without an app_user row is 404`() {
+        presence(user("ghost")).andExpect { status { isNotFound() }; jsonPath("$.error") { value("UNKNOWN_USER") } }
+    }
+
+    @Test
+    fun `presence returns null ban for a user that is not banned`() {
+        mvc.get("/api/me") { header("Authorization", user("p1")) }
+        presence(user("p1")).andExpect { status { isOk() }; jsonPath("$.ban") { doesNotExist() } }
+    }
+
+    @Test
+    fun `manual ban endpoint enforces authentication and role`() {
+        fun ban(auth: String?, body: String) = mvc.post("/api/admin/users/ban") {
+            auth?.let { header("Authorization", it) }; contentType = MediaType.APPLICATION_JSON; content = body
+        }
+        ban(null, """{"handle":"alice"}""").andExpect { status { isUnauthorized() } }
+        ban(user("plain"), """{"handle":"alice"}""").andExpect { status { isForbidden() } }
+        ban(admin(), """{"handle":"a!"}""").andExpect { status { isBadRequest() }; jsonPath("$.error") { value("INVALID_HANDLE") } }
+        ban(admin(), "{}").andExpect { status { isBadRequest() } }
+        ban(admin(), """{"handle":"nobody"}""").andExpect { status { isNotFound() }; jsonPath("$.error") { value("UNKNOWN_HANDLE") } }
+
+        signIn("p1", "alice")
+        ban(admin(), """{"handle":"ALICE"}""").andExpect {
+            status { isOk() }
+            jsonPath("$.handle") { value("alice") }
+            jsonPath("$.step") { value(0) }
+            jsonPath("$.until") { exists() }
+            jsonPath("$.remainingSeconds") { isNumber() }
+        }
+        ban(admin(), """{"handle":"alice"}""").andExpect {
+            status { isConflict() }
+            jsonPath("$.error") { value("ALREADY_BANNED") }
+            jsonPath("$.until") { exists() }
+        }
+        assertEquals(ADMIN_EMAIL, jdbc.queryForObject("SELECT banned_by FROM user_ban", String::class.java))
+
+        signIn("admin-sub", "boss", admin())
+        ban(admin(), """{"handle":"boss"}""").andExpect { status { isConflict() }; jsonPath("$.error") { value("CANNOT_BAN_ADMIN") } }
+    }
+
+    @Test
+    fun `a banned user sees the ban from presence and me`() {
+        signIn("p1", "alice")
+        mvc.post("/api/admin/users/ban") {
+            header("Authorization", admin()); contentType = MediaType.APPLICATION_JSON; content = """{"handle":"alice"}"""
+        }.andExpect { status { isOk() } }
+
+        presence(user("p1")).andExpect { status { isOk() }; jsonPath("$.ban.until") { exists() }; jsonPath("$.ban.remainingSeconds") { isNumber() } }
+        mvc.get("/api/me") { header("Authorization", user("p1")) }.andExpect { status { isOk() }; jsonPath("$.ban.until") { exists() } }
     }
 }

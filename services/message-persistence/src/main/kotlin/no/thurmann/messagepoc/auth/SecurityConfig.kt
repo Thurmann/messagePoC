@@ -32,6 +32,7 @@ class SecurityConfig(
                         "/actuator/health/**", "/actuator/health",
                     ).permitAll()
                     .requestMatchers("/api/me/**", "/api/me").authenticated()
+                    .requestMatchers("/api/users/**").authenticated()
                     .requestMatchers("/api/admin/**", "/api/audit-logs").hasRole("ADMIN")
                     .anyRequest().denyAll()
             }

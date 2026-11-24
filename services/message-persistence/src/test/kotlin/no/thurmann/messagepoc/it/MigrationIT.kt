@@ -36,11 +36,11 @@ class MigrationIT {
     }
 
     @Test
-    fun `fresh database migrates to V3 with all tables columns and status constraint`() {
+    fun `fresh database migrates to V4 with all tables columns and status constraint`() {
         val (flyway, jdbc) = freshDatabase(uniqueName())
         val result = flyway.migrate()
-        assertEquals(3, result.migrationsExecuted)
-        assertEquals("3", flyway.info().current().version.version)
+        assertEquals(4, result.migrationsExecuted)
+        assertEquals("4", flyway.info().current().version.version)
 
         val tables = jdbc.queryForList("SELECT table_name FROM information_schema.tables WHERE table_schema='public'", String::class.java)
         assertTrue(tables.containsAll(listOf("message_result", "app_user", "admin_user", "user_ban")), "tables: $tables")
@@ -49,6 +49,13 @@ class MigrationIT {
             "SELECT column_name FROM information_schema.columns WHERE table_name='message_result'", String::class.java,
         )
         assertTrue(columns.containsAll(listOf("profanity_score", "author_id", "author_handle", "strike", "strikes_after")), "columns: $columns")
+
+        assertTrue(
+            jdbc.queryForList("SELECT column_name FROM information_schema.columns WHERE table_name='app_user'", String::class.java).contains("last_seen_at"),
+        )
+        assertTrue(
+            jdbc.queryForList("SELECT column_name FROM information_schema.columns WHERE table_name='user_ban'", String::class.java).contains("banned_by"),
+        )
 
         val constraint = jdbc.queryForObject(
             "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='message_result_status_chk'", String::class.java,
@@ -83,7 +90,7 @@ class MigrationIT {
 
         flyway.migrate()
 
-        assertEquals("3", flyway.info().current().version.version)
+        assertEquals("4", flyway.info().current().version.version)
         val row = jdbc.queryForMap("SELECT * FROM message_result WHERE event_id = ?", eventId)
         assertEquals("old message", row["text"])
         assertEquals(0.25, row["profanity_score"])
