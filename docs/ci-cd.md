@@ -4,9 +4,19 @@ Three GitHub Actions workflows live in `.github/workflows`:
 
 | Workflow | Trigger | What it does |
 | --- | --- | --- |
-| `ci.yml` | Pull requests, pushes to `main`, manual | `./gradlew build` (unit and Testcontainers integration tests), a Docker build of each of the four service images (not pushed), and a `kubectl kustomize` render of `deploy/kubernetes`, `deploy/kubernetes/kafka` and `deploy/azure`, and the `Azure scripts` job (ShellCheck and the stub-based tests of the Azure up/down scripts, no Azure access). On `main`, it then tags the next version and calls `release.yml` |
-| `release.yml` | Called by `ci.yml`, or tags `v*.*.*` pushed by hand | Builds and tests, pushes the images to GHCR, creates the GitHub release, and deploys stable releases to AKS when deployment is enabled |
+| `ci.yml` | Pull requests, pushes to `main`, manual | `./gradlew build` (unit and Testcontainers integration tests), a Docker build of each of the four service images from the jars that build packaged (not pushed), and a `kubectl kustomize` render of `deploy/kubernetes`, `deploy/kubernetes/kafka` and `deploy/azure`, and the `Azure scripts` job (ShellCheck and the stub-based tests of the Azure up/down scripts, no Azure access). On `main`, it then tags the next version and calls `release.yml` |
+| `release.yml` | Called by `ci.yml`, or tags `v*.*.*` pushed by hand | Builds the jars (without running the tests again when called by CI, since CI has just tested the same commit; a tag pushed by hand runs the full build and tests), pushes the images built from those jars to GHCR, creates the GitHub release, and deploys stable releases to AKS when deployment is enabled |
 | `deploy.yml` | Called by `release.yml`, or run manually with a version | Imports a released version's images into ACR and applies `deploy/azure` from that release tag to AKS |
+
+## Build once
+
+CI runs Gradle once per run. The image jobs don't compile the services again:
+they package the jars from the build job, through the Dockerfile's
+`JAR_SOURCE=prebuilt` option and the `jars` build context. The release does the
+same with the jars it builds, and it doesn't retest a commit that CI has just
+tested. `docker compose up --build` and a plain
+`docker build --build-arg SERVICE=<service> .` still compile inside Docker, so
+they work without a prior Gradle build.
 
 ## Cut a release
 
@@ -34,8 +44,8 @@ For `v0.2.0`, the release workflow then:
 
 1. Builds and tests with `-PreleaseVersion=0.2.0`, so the service jars are named
    `<service>-0.2.0.jar` (without the property, the version stays `0.1.0-SNAPSHOT`).
-   The image builds pass the same version through the Dockerfile's
-   `RELEASE_VERSION` build argument.
+   The image builds package these jars, so the version is already in them.
+   Called from CI, this step only builds the jars, since CI has tested the commit.
 2. Builds the four images for `linux/amd64` and pushes them to
    `ghcr.io/<owner>/message-poc/<service>` with the tags `0.2.0`, `0.2` and `latest`.
 3. Creates the GitHub release `v0.2.0` with generated notes, the image list and the
