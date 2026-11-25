@@ -112,8 +112,8 @@ default to `~/message-poc-backups` (`--backup-dir` or `BACKUP_DIR` change it).
 is still valid for at least seven days, so that repeated showcases do not hit
 the Let's Encrypt rate limits (`--no-save-tls` and `--no-restore-tls` turn this
 off). For test runs, use `./scripts/azure-up.sh --staging-cert`; browsers warn
-about the staging certificate. `--with-loki` also deploys Loki and Alloy for the
-audit panel (step 11).
+about the staging certificate. `--with-loki` also deploys Loki, Alloy and Grafana
+for the audit panel and log search (step 11).
 
 **Secrets on the command line.** The generated PostgreSQL admin password and the
 GHCR token are passed to `az` as command-line arguments, so they are visible in
@@ -127,6 +127,10 @@ scripts only on a machine you trust.
 | Running | about $11 to $13 per day, or about $0.50 per hour |
 | Idle (only the persistent group) | about $0.12 per day for the static IP |
 | One 6-hour showcase, including setup and teardown | about $3 to $4 |
+
+`--with-loki` adds a 10Gi disk for Loki, which costs a few dollars per month
+while the environment exists. Alloy and Grafana run on the existing nodes and
+add no disk.
 
 Billing starts when the resources exist, even if a script fails halfway. If you
 forget to tear down, the running cost adds up to about $350 to $400 per month.
@@ -613,7 +617,7 @@ some restarts at first are normal. Strimzi needs a few minutes to start the
 broker and create the topics (`kubectl -n "$NAMESPACE" get kafka` should show
 `READY True`) before you judge the result.
 
-## 11. Observability: Loki for the audit panel
+## 11. Observability: Loki and Grafana
 
 The `/api/audit-logs` endpoint in `message-persistence` calls Loki at `LOKI_URL`
 and queries `{service="message-audit"}`. Without Loki it returns HTTP `502`
@@ -667,9 +671,68 @@ curl -G -s "http://localhost:3100/loki/api/v1/query_range" \
   --data-urlencode 'query={service="message-audit"}' --data-urlencode 'limit=5'
 ```
 
-Grafana is not deployed. The repo's Grafana (`grafana/grafana:13.2.0`, with the
-provisioned Loki datasource) can be run in the cluster the same way if you want
-the Explore view. Its datasource URL would be `http://loki:3100`.
+### Grafana
+
+`azure-up.sh --with-loki` also deploys Grafana from
+[`deploy/azure/loki/grafana.yaml`](../deploy/azure/loki/grafana.yaml). It runs
+one replica of `grafana/grafana:13.2.0`, requesting 50m CPU and 256Mi memory
+(limits 500m and 512Mi), behind a ClusterIP Service named `grafana` on port
+3000. There is no Ingress on purpose, so nothing is exposed to the internet.
+Only a port-forward reaches it. Anonymous access is off. The script creates the
+admin user `admin` with a random password, stores it once in the Secret
+`grafana-admin`, and never prints it. A re-run keeps the password.
+
+To do it by hand, create the Loki datasource ConfigMap first. Grafana reads it
+from `/etc/grafana/provisioning/datasources`, so the pod needs it at start:
+
+```bash
+kubectl -n "$NAMESPACE" create configmap grafana-datasources \
+  --from-file=loki.yml=observability/grafana/provisioning/datasources/loki.yml \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+Create the admin Secret once. The password is written to a file, not to the
+command line. Skip this block if the Secret already exists. Replacing it makes the
+Secret disagree with the running Grafana until the pod restarts:
+
+```bash
+(
+  umask 077
+  envfile="$(mktemp)"
+  printf 'admin-user=admin\nadmin-password=%s\n' "$(openssl rand -hex 24)" >"$envfile"
+  kubectl -n "$NAMESPACE" create secret generic grafana-admin \
+    --from-env-file="$envfile"
+  rm -f "$envfile"
+)
+```
+
+Then apply the Deployment and the Service:
+
+```bash
+kubectl -n "$NAMESPACE" apply -f deploy/azure/loki/grafana.yaml
+kubectl -n "$NAMESPACE" rollout status deploy/grafana --timeout=5m
+```
+
+To open Grafana, start a port-forward and leave it running:
+
+```bash
+kubectl -n "$NAMESPACE" port-forward svc/grafana 3000:3000
+```
+
+Open http://localhost:3000 and log in as `admin`. The password is in the
+Secret:
+
+```bash
+kubectl -n "$NAMESPACE" get secret grafana-admin -o jsonpath='{.data.admin-password}' | base64 --decode
+```
+
+In Grafana, open Explore, choose the Loki datasource, and run the audit query:
+`{service="message-audit"}`.
+
+Grafana stores its data in an emptyDir volume. Saved dashboards are lost when
+the pod restarts or when the environment is torn down. The Loki datasource is
+not lost, because it comes from the ConfigMap. Logs stay in Loki, which has its
+own volume.
 
 ## 12. Verify the deployment
 
@@ -786,7 +849,9 @@ the text, not the thresholds.
 The main costs are the three AKS nodes, the PostgreSQL server, and the Azure
 public IP and load balancer.
 ACR Basic and the three Strimzi PVCs also cost something. Check the current prices in
-the Azure pricing calculator for your region.
+the Azure pricing calculator for your region. With `--with-loki`, Loki adds a
+10Gi disk (a few dollars per month while the environment exists). Alloy and
+Grafana run on the existing nodes and add no disk.
 
 To pause the work without deleting data, stop the cluster and the database:
 

@@ -94,6 +94,13 @@ case "$name" in
   kubectl)
     case "$args" in
       *" kustomize "*) exec "$REAL_KUBECTL" "$@" ;;
+      *" get secret grafana-admin "*)
+        case "${STUB_GRAFANA_SECRET:-absent}" in
+          exists) echo secret/grafana-admin ;;
+          error) echo "error: the server was unable to return a response" >&2; exit 1 ;;
+        esac ;;
+      *" rollout status deploy/grafana "*)
+        if [[ -n "$(find "${TMPDIR:-/tmp}" -name grafana-admin.env 2>/dev/null)" ]]; then touch "$STUB_DIR/grafana-envfile-left"; fi ;;
       *" get svc nginx "*) echo 20.0.0.1 ;;
     esac ;;
   psql) cat >/dev/null ;;
@@ -174,8 +181,9 @@ fi
 # run_up [options]: stdin comes from the caller, output goes to $T/out.txt.
 run_up() {
   : >"$STUB_LOG"
-  rm -f "$T/pip-created"
-  PATH="$T/bin-up:$PATH" TYPESAFE_API_KEY=k HOME="$T/home" \
+  rm -f "$T/pip-created" "$T/grafana-envfile-left"
+  mkdir -p "$T/tmp"
+  PATH="$T/bin-up:$PATH" TYPESAFE_API_KEY=k HOME="$T/home" TMPDIR="$T/tmp" \
     "$UP" --config "$T/test.env" --version 0.1.0 --manifests-from-worktree "$@" >"$T/out.txt" 2>&1
 }
 
@@ -216,9 +224,38 @@ if "$HAVE_KUBECTL"; then
   check "up (d) order: pip create second, ephemeral rg third" 'sed -n 2p "$T/order.txt" | grep -q "network public-ip" && sed -n 3p "$T/order.txt" | grep -q "group create"'
   check "up (d) order: helm installs before applying the manifests" 'h=$(grep -n "^helm .* upgrade" "$STUB_LOG" | head -1 | cut -d: -f1); a=$(grep -n "kubectl.* apply -f .*rendered.yaml" "$STUB_LOG" | head -1 | cut -d: -f1); [[ -n $h && -n $a && $h -lt $a ]]'
   check "up (d) four images imported" '[[ $(grep -c "^az acr import" "$STUB_LOG") -eq 4 ]]'
+
+  rc=0
+  (export AZURE_SCRIPTS_ALLOW_NON_TTY=1; run_up --with-loki <<<$'y\nrg-message-poc') || rc=$?
+  check "up (g) with-loki: exit 0" '[[ $rc -eq 0 ]]'
+  check "up (g) grafana manifest applied" 'grep -qE "apply -f .*deploy/azure/loki/grafana.yaml" "$STUB_LOG"'
+  check "up (g) datasource configmap created" 'grep -q "create configmap grafana-datasources" "$STUB_LOG"'
+  check "up (g) admin secret from env file" 'grep -q "create secret generic grafana-admin --from-env-file" "$STUB_LOG" && ! grep -q "apply .*grafana-admin" "$STUB_LOG"'
+  # The stub gives every openssl call the same value, and the existing az postgres call already
+  # receives its own password on the command line, so that line is excluded here.
+  check "up (g) password never on a command line" '! grep -v "^az postgres" "$STUB_LOG" | grep -q 00112233445566778899aabbccddeeff0011223344556677 && ! grep -q 00112233445566778899aabbccddeeff0011223344556677 "$T/out.txt"'
+  check "up (g) env file removed before Grafana starts" '[[ ! -e "$T/grafana-envfile-left" ]] && grep -q "rollout status deploy/grafana" "$STUB_LOG"'
+  check "up (g) waits for grafana" 'grep -q "rollout status deploy/grafana" "$STUB_LOG"'
+  check "up (g) prints port-forward" 'grep -q "port-forward svc/grafana 3000:3000" "$T/out.txt"'
+
+  rc=0
+  (export AZURE_SCRIPTS_ALLOW_NON_TTY=1 STUB_GRAFANA_SECRET=exists; run_up --with-loki <<<$'y\nrg-message-poc') || rc=$?
+  check "up (h) existing grafana secret: exit 0" '[[ $rc -eq 0 ]]'
+  check "up (h) existing grafana secret: not recreated" '! grep -q "create secret generic grafana-admin" "$STUB_LOG"'
+  check "up (h) existing grafana secret: says it keeps it" 'grep -q "Keeping the existing Grafana admin password" "$T/out.txt"'
+
+  rc=0
+  (export AZURE_SCRIPTS_ALLOW_NON_TTY=1 STUB_GRAFANA_SECRET=error; run_up --with-loki <<<$'y\nrg-message-poc') || rc=$?
+  check "up (i) grafana secret lookup error: fails" '[[ $rc -ne 0 ]]'
+  check "up (i) grafana secret lookup error: no new secret" '! grep -q "create secret generic grafana-admin" "$STUB_LOG"'
 else
-  SKIPPED=$((SKIPPED + 18))
+  SKIPPED=$((SKIPPED + 31))
 fi
+
+# Grafana is reachable only by port-forward: no Ingress, no LoadBalancer or NodePort Service.
+check "grafana manifest: no Ingress" '! grep -q "kind: Ingress" deploy/azure/loki/grafana.yaml'
+check "grafana manifest: no LoadBalancer or NodePort" '! grep -qE "LoadBalancer|NodePort" deploy/azure/loki/grafana.yaml'
+check "grafana manifest: memory limit 512Mi" 'grep -q "memory: 512Mi" deploy/azure/loki/grafana.yaml'
 
 # Ephemeral group still being deleted: up must refuse before any mutation.
 rc=0

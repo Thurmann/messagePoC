@@ -39,7 +39,7 @@ Options:
   --config FILE            Use FILE instead of scripts/azure.env.
   --version X.Y.Z          Release to deploy (default: latest GitHub release or v* tag).
   --staging-cert           Use the Let's Encrypt staging issuer (browsers will warn).
-  --with-loki              Also deploy Loki and Alloy for the audit panel.
+  --with-loki              Also deploy Loki, Alloy and Grafana for the audit panel and log search.
   --restore-db FILE        Restore a pg_dump file into the new database before deploying.
   --no-restore-tls         Do not reuse a certificate saved by azure-down.sh.
   --manifests-from-worktree
@@ -298,7 +298,8 @@ preflight() {
   fi
 
   if "$WITH_LOKI"; then
-    for out in deploy/azure/loki/loki.yaml deploy/azure/loki/kubernetes.alloy observability/loki/config.yml; do
+    for out in deploy/azure/loki/loki.yaml deploy/azure/loki/kubernetes.alloy deploy/azure/loki/grafana.yaml \
+      observability/loki/config.yml observability/grafana/provisioning/datasources/loki.yml; do
       [[ -f "$PROJECT_DIR/$out" ]] || fail "--with-loki needs $out, which is missing from the working tree"
     done
   fi
@@ -351,7 +352,7 @@ print_up_summary() {
   log "    with Let's Encrypt issuers ($(if "$STAGING_CERT"; then echo "STAGING certificate, browsers will warn"; else echo "production certificate"; fi)),"
   log "    namespace $NAMESPACE with the Secret message-poc-secrets, and the application $VERSION"
   if "$WITH_LOKI"; then
-    log "    Loki (10Gi disk) and Alloy for the audit panel"
+    log "    Loki (10Gi disk), Alloy and Grafana (port-forward only, no public endpoint) for the audit panel and log search"
   fi
   if [[ -n "$GITHUB_DEPLOY_PRINCIPAL_ID" ]]; then
     log "  - Roles for GitHub identity $GITHUB_DEPLOY_PRINCIPAL_ID: Contributor on the ACR,"
@@ -756,6 +757,26 @@ import_images() {
   done
 }
 
+# Creates grafana-admin once and keeps it afterwards, so a re-run does not change the password.
+ensure_grafana_secret() {
+  local envfile="$WORK_DIR/grafana-admin.env" existing password
+  # Any error other than NotFound stops the script (set -e), so a failing call never replaces the password.
+  existing="$(k -n "$NAMESPACE" get secret grafana-admin --ignore-not-found -o name)"
+  if [[ -n "$existing" ]]; then
+    log "Keeping the existing Grafana admin password (Secret grafana-admin)"
+    return 0
+  fi
+  password="$(openssl rand -hex 24)"
+  [[ ${#password} -eq 48 ]] || fail "could not generate the Grafana admin password"
+  (
+    umask 077
+    printf 'admin-user=admin\nadmin-password=%s\n' "$password" >"$envfile"
+  )
+  # create, not apply: if the Secret appeared in the meantime this fails instead of replacing it.
+  k -n "$NAMESPACE" create secret generic grafana-admin --from-env-file="$envfile"
+  rm -f "$envfile"
+}
+
 deploy_loki() {
   k -n "$NAMESPACE" create configmap loki-config \
     --from-file=config.yml="$PROJECT_DIR/observability/loki/config.yml" --dry-run=client -o yaml | k apply -f -
@@ -766,6 +787,11 @@ deploy_loki() {
     --set controller.type=deployment \
     --set-file alloy.configMap.content="$PROJECT_DIR/deploy/azure/loki/kubernetes.alloy" \
     --wait --timeout 10m
+  k -n "$NAMESPACE" create configmap grafana-datasources \
+    --from-file=loki.yml="$PROJECT_DIR/observability/grafana/provisioning/datasources/loki.yml" --dry-run=client -o yaml | k apply -f -
+  ensure_grafana_secret
+  k -n "$NAMESPACE" apply -f "$PROJECT_DIR/deploy/azure/loki/grafana.yaml"
+  k -n "$NAMESPACE" rollout status deploy/grafana --timeout=5m
 }
 
 wait_ready() {
@@ -802,6 +828,11 @@ print_result() {
   log "  Static IP: $PIP_IP"
   log "  Version  : $VERSION"
   log "  kubectl  : kubectl --context $AKS_NAME -n $NAMESPACE get pods"
+  if "$WITH_LOKI"; then
+    log "  Grafana  : kubectl --context $AKS_NAME -n $NAMESPACE port-forward svc/grafana 3000:3000"
+    log "             then open http://localhost:3000 and log in as admin with the password from:"
+    log "             kubectl --context $AKS_NAME -n $NAMESPACE get secret grafana-admin -o jsonpath='{.data.admin-password}' | base64 --decode"
+  fi
   if "$STAGING_CERT"; then
     log "  Certificate: STAGING (browsers will warn)"
   fi
@@ -909,7 +940,7 @@ if ! "$SKIP_DEPLOY"; then
   k apply -f "$RENDERED_FILE"
 fi
 if "$WITH_LOKI"; then
-  section "Deploying Loki and Alloy"
+  section "Deploying Loki, Alloy and Grafana"
   deploy_loki
 fi
 if ! "$SKIP_DEPLOY"; then
