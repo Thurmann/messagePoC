@@ -8,7 +8,8 @@ FROM eclipse-temurin:25-jdk-alpine AS build
 
 WORKDIR /workspace
 ARG SERVICE
-# Set by the release workflow so the jar carries the release version.
+# Optional: gives the jar a release version, for example in a manual image build.
+# The workflows build the jars with Gradle and use the prebuilt source instead.
 ARG RELEASE_VERSION
 
 COPY gradlew gradlew.bat settings.gradle.kts build.gradle.kts gradle.properties ./
@@ -21,6 +22,8 @@ RUN --mount=type=cache,target=/root/.gradle,sharing=locked \
 
 RUN mkdir /jar && cp services/${SERVICE}/build/libs/*.jar /jar/
 
+# Needs --build-context jars=<dir> with <service>/build/libs/<boot jar>; without it,
+# BuildKit looks for an image called "jars" and the build fails.
 FROM scratch AS prebuilt
 
 ARG SERVICE
