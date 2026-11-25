@@ -240,7 +240,7 @@ print_down_summary() {
   log "DATA THAT WILL BE LOST"
   log "  - PostgreSQL: all messages, users and handles, strikes and bans"
   log "  - Kafka: all topics, messages and consumer offsets (the 3 broker disks)"
-  log "  - Loki: all collected logs (if Loki was deployed)"
+  log "  - Loki and Grafana: all collected logs and any saved Grafana dashboards (if --with-loki was used)"
   log "  - Container Registry: the imported images (re-importable from GHCR by azure-up.sh)"
   if "$SAVE_TLS"; then
     log "  - TLS certificate: saved to ${BACKUP_DIR}/${TLS_BACKUP_NAME} if it exists (reused by azure-up.sh)"

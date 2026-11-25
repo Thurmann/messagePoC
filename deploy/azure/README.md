@@ -27,6 +27,7 @@ Replace these placeholders, then run `kubectl apply -f deploy/azure/cluster-issu
 The Strimzi operator and cert-manager must be installed first, and the Secret
 `message-poc-secrets` (`DB_PASSWORD`, `TYPESAFE_API_KEY`) must exist in the namespace.
 
-[`loki/`](loki) holds the optional Loki manifest (`loki.yaml`) and the Alloy
-configuration (`kubernetes.alloy`) for the audit panel. They are not part of the
-kustomization; guide step 11 and `scripts/azure-up.sh --with-loki` apply them.
+[`loki/`](loki) holds the optional Loki manifest (`loki.yaml`), the Alloy
+configuration (`kubernetes.alloy`) for the audit panel, and the Grafana manifest
+(`grafana.yaml`) for log search. They are not part of the kustomization; guide
+step 11 and `scripts/azure-up.sh --with-loki` apply them.
