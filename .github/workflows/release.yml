@@ -85,8 +85,13 @@ jobs:
         with:
           cache-provider: basic
 
+      # When CI calls this workflow it has just built and tested the same commit, so only the
+      # jars are built. A release tag pushed by hand runs the full build and tests.
       - name: Build and test
-        run: ./gradlew build -PreleaseVersion="${{ steps.version.outputs.version }}" --no-daemon
+        env:
+          GRADLE_TASK: ${{ inputs.tag && 'assemble' || 'build' }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: ./gradlew "$GRADLE_TASK" -PreleaseVersion="$VERSION" --no-daemon
 
       - name: Upload service jars
         uses: actions/upload-artifact@v7
@@ -112,6 +117,11 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ env.TAG }}
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: service-jars
+          path: ${{ runner.temp }}/jars
 
       - uses: docker/setup-buildx-action@v4
 
@@ -139,13 +149,12 @@ jobs:
           context: .
           build-args: |
             SERVICE=${{ matrix.service }}
-            RELEASE_VERSION=${{ needs.verify.outputs.version }}
+            JAR_SOURCE=prebuilt
+          build-contexts: jars=${{ runner.temp }}/jars
           platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=${{ matrix.service }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
 
   release:
     name: GitHub release
