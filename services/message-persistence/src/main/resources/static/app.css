@@ -33,6 +33,7 @@ h2 { margin: 0 0 6px; font-size: 18px; }
 .conn { font-size: 11px; font-family: var(--font-mono); color: var(--faint); }
 .conn.on { color: var(--ok); }
 .conn.warn { color: var(--warn); }
+.version { font-size: 11px; font-family: var(--font-mono); color: var(--faint); }
 .tabs { display: flex; gap: 4px; }
 .tab, .btn { border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--fg); padding: 6px 14px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
 .tab.active { background: var(--accent-soft); border-color: var(--accent); }

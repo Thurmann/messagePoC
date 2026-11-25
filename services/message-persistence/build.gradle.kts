@@ -17,6 +17,14 @@ kotlin {
     }
 }
 
+// Writes META-INF/build-info.properties so /api/config can report the release version.
+// The time is left out so unchanged builds stay up to date and cacheable.
+springBoot {
+    buildInfo {
+        excludes = setOf("time")
+    }
+}
+
 dependencies {
     implementation(project(":contracts"))
     implementation("org.springframework.boot:spring-boot-starter-kafka")
