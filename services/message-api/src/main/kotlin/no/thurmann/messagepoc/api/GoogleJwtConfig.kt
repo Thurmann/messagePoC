@@ -7,6 +7,7 @@ import org.springframework.context.annotation.Configuration
 import org.springframework.security.oauth2.jwt.JwtDecoder
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder
 
+/** Identical copy in message-persistence auth/GoogleJwtConfig.kt; keep both in sync (services deploy independently). */
 @Configuration
 class GoogleJwtConfig {
     private val logger = LoggerFactory.getLogger(javaClass)

@@ -7,7 +7,8 @@ import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult
 import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.security.oauth2.jwt.JwtTimestampValidator
 
-val GOOGLE_ISSUERS = setOf("https://accounts.google.com", "accounts.google.com")
+/** Identical copy in message-persistence auth/GoogleJwtValidator.kt; keep both in sync (services deploy independently). */
+private val GOOGLE_ISSUERS = setOf("https://accounts.google.com", "accounts.google.com")
 
 class GoogleClaimsValidator(private val clientId: String) : OAuth2TokenValidator<Jwt> {
     override fun validate(token: Jwt): OAuth2TokenValidatorResult {

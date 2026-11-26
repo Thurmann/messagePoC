@@ -8,6 +8,7 @@ import no.thurmann.messagepoc.contracts.MessageAuthor
 import no.thurmann.messagepoc.contracts.MessageSubmittedEvent
 import no.thurmann.messagepoc.contracts.MessageSubmittedPayload
 import org.apache.kafka.common.errors.RetriableException
+import org.apache.kafka.common.errors.TimeoutException as KafkaTimeoutException
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.dao.DataAccessException
@@ -26,6 +27,7 @@ import java.time.Duration
 import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 
 @RestController
 @RequestMapping("/api/messages")
@@ -49,7 +51,7 @@ class MessageController(
             UUID.randomUUID()
         } else {
             clientMessageId.toUuidOrNull()
-                ?: return ResponseEntity.badRequest().body(mapOf("error" to "INVALID_MESSAGE_ID"))
+                ?: return errorBody(HttpStatus.BAD_REQUEST, "INVALID_MESSAGE_ID")
         }
         val status = try {
             userStatusLookup.find(subject, now)
@@ -58,13 +60,13 @@ class MessageController(
                 .setCause(e)
                 .addKeyValue("authorId", subject)
                 .log("User status lookup failed")
-            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(mapOf("error" to "UNAVAILABLE"))
+            return errorBody(HttpStatus.SERVICE_UNAVAILABLE, "UNAVAILABLE")
         }
 
         val handle = when (val decision = PostingGuard.evaluate(status, now)) {
             is PostingDecision.Allowed -> decision.handle
             PostingDecision.HandleRequired ->
-                return ResponseEntity.status(HttpStatus.CONFLICT).body(mapOf("error" to "HANDLE_REQUIRED"))
+                return errorBody(HttpStatus.CONFLICT, "HANDLE_REQUIRED")
             is PostingDecision.Banned ->
                 return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .header(HttpHeaders.RETRY_AFTER, decision.remainingSeconds.toString())
@@ -95,7 +97,7 @@ class MessageController(
         } catch (e: InterruptedException) {
             Thread.currentThread().interrupt()
             return unconfirmed(messageId, correlationId, e)
-        } catch (e: java.util.concurrent.TimeoutException) {
+        } catch (e: TimeoutException) {
             return unconfirmed(messageId, correlationId, e)
         } catch (e: Exception) {
             if (e.hasUnknownOutcomeCause()) {
@@ -138,10 +140,13 @@ class MessageController(
     }
 }
 
+private fun errorBody(status: HttpStatus, code: String): ResponseEntity<*> =
+    ResponseEntity.status(status).body(mapOf("error" to code))
+
 private fun Throwable.hasUnknownOutcomeCause(): Boolean =
     generateSequence(this) { it.cause?.takeIf { c -> c !== it } }
         .take(20)
-        .any { it is RetriableException || it is org.apache.kafka.common.errors.TimeoutException }
+        .any { it is RetriableException || it is KafkaTimeoutException }
 
 data class SubmitMessageUnconfirmed(
     val messageId: UUID,
