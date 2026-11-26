@@ -6,6 +6,7 @@ import no.thurmann.messagepoc.contracts.MessageRejectedEvent
 import no.thurmann.messagepoc.contracts.MessageRejectedPayload
 import no.thurmann.messagepoc.contracts.MessageValidatedEvent
 import no.thurmann.messagepoc.contracts.MessageValidatedPayload
+import no.thurmann.messagepoc.persistence.MessagePersistenceApplication
 import no.thurmann.messagepoc.persistence.MessageResult
 import org.junit.jupiter.api.BeforeEach
 import org.springframework.beans.factory.annotation.Autowired
@@ -83,7 +84,7 @@ class TestJwtConfig {
 }
 
 @SpringBootTest(
-    classes = [no.thurmann.messagepoc.persistence.MessagePersistenceApplication::class],
+    classes = [MessagePersistenceApplication::class],
     properties = [
         "spring.kafka.listener.auto-startup=false",
         "spring.kafka.bootstrap-servers=localhost:1",

@@ -58,11 +58,11 @@ class KafkaWriteProbe internal constructor(
             onResult(state.recordSuccess(Instant.now()), null)
         } catch (_: InterruptedException) {
             Thread.currentThread().interrupt()
-            onResult(state.recordFailure(Instant.now(), "interrupted"), "interrupted")
+            onResult(state.recordFailure(Instant.now()), "interrupted")
         } catch (e: Exception) {
             val cause = if (e is ExecutionException && e.cause != null) e.cause!! else e
             val reason = "${cause.javaClass.simpleName}: ${cause.message}"
-            onResult(state.recordFailure(Instant.now(), reason), reason)
+            onResult(state.recordFailure(Instant.now()), reason)
         }
     }
 

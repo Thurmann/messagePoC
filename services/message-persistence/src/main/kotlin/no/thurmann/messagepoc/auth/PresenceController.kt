@@ -27,7 +27,11 @@ class PresenceController(
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(mapOf("error" to "UNKNOWN_USER"))
         }
         val now = Instant.now()
-        val ban = if (adminDirectory.isAdmin(jwt)) null else moderationService.activeBan(jwt.subject!!, now)?.let { BanInfo.of(it.endsAt, now) }
+        val ban = if (adminDirectory.isAdmin(jwt)) {
+            null
+        } else {
+            moderationService.activeBan(jwt.subject!!, now)?.let { BanInfo.of(it.endsAt, now) }
+        }
         return ResponseEntity.ok(PresenceResponse(ban))
     }
 

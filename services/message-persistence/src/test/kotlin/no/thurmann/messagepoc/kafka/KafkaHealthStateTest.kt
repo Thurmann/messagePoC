@@ -21,9 +21,9 @@ class KafkaHealthStateTest {
     @Test
     fun `one failure from unknown stays unknown, two go down`() {
         val s = KafkaHealthState(2)
-        assertFalse(s.recordFailure(t(1), "x"))
+        assertFalse(s.recordFailure(t(1)))
         assertEquals("UNKNOWN", s.view().status)
-        assertTrue(s.recordFailure(t(2), "x"))
+        assertTrue(s.recordFailure(t(2)))
         assertEquals("DOWN", s.view().status)
         assertEquals(t(2), s.view().since)
     }
@@ -31,14 +31,14 @@ class KafkaHealthStateTest {
     @Test
     fun `success goes up immediately and single failure does not flip`() {
         val s = KafkaHealthState(2)
-        s.recordFailure(t(1), "x"); s.recordFailure(t(2), "x")
+        s.recordFailure(t(1)); s.recordFailure(t(2))
         assertTrue(s.recordSuccess(t(3)))
         assertEquals("UP", s.view().status)
-        assertFalse(s.recordFailure(t(4), "x"))
+        assertFalse(s.recordFailure(t(4)))
         assertEquals("UP", s.view().status)
         assertFalse(s.recordSuccess(t(5)))
-        assertFalse(s.recordFailure(t(6), "x"))
-        assertTrue(s.recordFailure(t(7), "x"))
+        assertFalse(s.recordFailure(t(6)))
+        assertTrue(s.recordFailure(t(7)))
         assertEquals("DOWN", s.view().status)
     }
 
@@ -49,11 +49,11 @@ class KafkaHealthStateTest {
         s.recordSuccess(t(2))
         assertEquals(t(1), s.view().since)
         assertEquals(t(2), s.view().checkedAt)
-        s.recordFailure(t(3), "x")
+        s.recordFailure(t(3))
         assertEquals(t(1), s.view().since)
         assertEquals(t(3), s.view().checkedAt)
-        s.recordFailure(t(4), "x")
-        s.recordFailure(t(5), "x")
+        s.recordFailure(t(4))
+        s.recordFailure(t(5))
         assertEquals(t(4), s.view().since)
         assertEquals(t(5), s.view().checkedAt)
     }

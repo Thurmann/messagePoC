@@ -1,5 +1,4 @@
-import org.gradle.api.plugins.JavaPluginExtension
-import org.gradle.api.tasks.testing.Test
+import org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension
 
 plugins {
     kotlin("jvm") version "2.4.21" apply false
@@ -22,9 +21,9 @@ subprojects {
         extensions.configure<JavaPluginExtension> {
             toolchain.languageVersion = JavaLanguageVersion.of(25)
         }
-        extensions.configure<org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension> {
+        extensions.configure<KotlinJvmProjectExtension> {
             compilerOptions {
-                freeCompilerArgs.addAll("-Xjsr305=strict", "-Xannotation-default-target=param-property")
+                freeCompilerArgs.add("-Xjsr305=strict")
             }
         }
     }
