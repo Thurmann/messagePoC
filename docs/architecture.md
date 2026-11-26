@@ -164,6 +164,16 @@ regardless of which replica persisted the result. Clients that reconnect re-fetc
 `/api/chat/history`. The LISTEN connection requires a direct Postgres connection,
 not a transaction-pooled one.
 
+## Browser client
+
+The chat UI is a React and TypeScript single-page app in `frontend/`, built with Vite
+and packaged into the `message-persistence` jar, which serves it on the same origin.
+Headless feature services (`frontend/src/core`, `frontend/src/features`) share one
+store, and React components render from it through selectors (`frontend/src/ui`). The
+streams use fetch-based SSE, because the admin stream needs an `Authorization`
+header, and reconnect with backoff. Sending uses a pending and retry flow that
+honours `Retry-After`.
+
 ## Kafka write status
 
 ```text

@@ -12,8 +12,9 @@ local logging with Grafana Alloy, Loki, and Grafana.
 - A Google OAuth client ID for sign-in (see [Get a Google client ID](#get-a-google-client-id-locally))
 
 The project uses its own Gradle Wrapper; no global Gradle installation is
-required. The build also downloads Node.js automatically to compile the chat
-frontend (TypeScript, in `frontend/`), so it needs network access on the first build.
+required. The build downloads Node.js 24.15.0 itself to build the chat frontend
+(React and TypeScript, in `frontend/`), so you don't need Node installed and the
+first build needs network access.
 
 ## Start the complete local environment
 
@@ -41,8 +42,8 @@ reachable from the host at `localhost:9092`, `localhost:9094`, and
 so the cluster keeps accepting `acks=all` writes with one broker down. Each
 broker has a 512 MB heap cap.
 PostgreSQL is at `localhost:5432` and the message API at `localhost:8080`. The live chat is served by
-`message-persistence` at <http://localhost:8083>. The chat UI source is in `frontend/`
-and is packaged into `message-persistence`.
+`message-persistence` at <http://localhost:8083>. The chat UI source is in `frontend/`;
+the build packages it into the `message-persistence` jar, which serves it on the same origin.
 
 If you previously ran the single-broker setup, run `docker compose down`
 first. The old `kafka-data` volume is no longer used and can be removed with
@@ -402,13 +403,40 @@ security rules for public, signed-in and admin endpoints, and `message-api`'s
 posting checks and CORS. They never connect to the Compose Kafka or PostgreSQL,
 so they can run while the local stack is up.
 
+`./gradlew build` also builds the frontend (`vite build`), typechecks it with `tsc`,
+and runs its Vitest unit and component tests.
+
+## Frontend development
+
+The chat UI in `frontend/` is React 19 and TypeScript (strict), built with Vite. With
+the Compose stack running, start the dev server with hot reload:
+
+```bash
+cd frontend
+npm ci
+npm run dev
+```
+
+It serves <http://localhost:5173> and proxies `/api` to `http://localhost:8083`. Google
+sign-in there needs `http://localhost:5173` in the OAuth client's authorized JavaScript
+origins. Other commands:
+
+- `npm test` and `npm run typecheck` (from `frontend/`): Vitest unit and component
+  tests, and `tsc`.
+- `./gradlew :frontend:e2eTest` (from the repository root): Playwright browser tests
+  against `vite preview` serving the production build with the real CSP, with the
+  backend mocked. It downloads Chromium and is not part of `./gradlew build`.
+- `SMOKE_BASE_URL=http://localhost:8083 npx playwright test -c playwright.smoke.config.ts`
+  (from `frontend/`): smoke test against the running Compose stack.
+
 ## CI, releases and deployment
 
 GitHub Actions builds and tests every pull request and push to `main`, and also
-builds the four images and renders the Kubernetes manifests. Each green push to
-`main` is tagged with the next patch version (such as `v0.2.1`), which publishes
-the images to GHCR, creates a GitHub release, and, once it is enabled, deploys the
-release to AKS. See [CI, releases and deployment](docs/ci-cd.md).
+runs the Playwright browser tests, builds the four images and renders the
+Kubernetes manifests. Each green push to `main` is tagged with the next patch
+version (such as `v0.2.1`), which publishes the images to GHCR, creates a GitHub
+release, and, once it is enabled, deploys the release to AKS. See [CI, releases
+and deployment](docs/ci-cd.md).
 
 ## Stop
 
