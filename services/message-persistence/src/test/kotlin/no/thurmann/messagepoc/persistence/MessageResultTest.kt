@@ -1,4 +1,4 @@
-package no.thurmann.messagepoc.audit
+package no.thurmann.messagepoc.persistence
 
 import no.thurmann.messagepoc.contracts.MessageAuthor
 import no.thurmann.messagepoc.contracts.MessageRejectedEvent

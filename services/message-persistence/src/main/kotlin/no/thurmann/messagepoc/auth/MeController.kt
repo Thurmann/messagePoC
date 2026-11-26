@@ -1,6 +1,6 @@
 package no.thurmann.messagepoc.auth
 
-import no.thurmann.messagepoc.audit.AppUserRepository
+import no.thurmann.messagepoc.persistence.AppUserRepository
 import no.thurmann.messagepoc.moderation.ModerationPolicy
 import no.thurmann.messagepoc.moderation.ModerationProperties
 import no.thurmann.messagepoc.moderation.ModerationService

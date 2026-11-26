@@ -1,9 +1,9 @@
 package no.thurmann.messagepoc.chat
 
-import no.thurmann.messagepoc.audit.AppUserRepository
-import no.thurmann.messagepoc.audit.MessageResult
-import no.thurmann.messagepoc.audit.MessageResultRepository
-import no.thurmann.messagepoc.audit.MessageResultStatus
+import no.thurmann.messagepoc.persistence.AppUserRepository
+import no.thurmann.messagepoc.persistence.MessageResult
+import no.thurmann.messagepoc.persistence.MessageResultRepository
+import no.thurmann.messagepoc.persistence.MessageResultStatus
 import no.thurmann.messagepoc.moderation.ModerationService
 import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service

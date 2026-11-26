@@ -1,6 +1,6 @@
 package no.thurmann.messagepoc.it
 
-import no.thurmann.messagepoc.audit.MessageResult
+import no.thurmann.messagepoc.persistence.MessageResult
 import no.thurmann.messagepoc.contracts.MessageAuthor
 import no.thurmann.messagepoc.contracts.MessageRejectedEvent
 import no.thurmann.messagepoc.contracts.MessageRejectedPayload
@@ -83,7 +83,7 @@ class TestJwtConfig {
 }
 
 @SpringBootTest(
-    classes = [no.thurmann.messagepoc.audit.MessageViewApplication::class],
+    classes = [no.thurmann.messagepoc.persistence.MessagePersistenceApplication::class],
     properties = [
         "spring.kafka.listener.auto-startup=false",
         "spring.kafka.bootstrap-servers=localhost:1",

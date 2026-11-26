@@ -1,6 +1,6 @@
 package no.thurmann.messagepoc.chat
 
-import no.thurmann.messagepoc.audit.MessageResultStatus
+import no.thurmann.messagepoc.persistence.MessageResultStatus
 import org.postgresql.PGConnection
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value

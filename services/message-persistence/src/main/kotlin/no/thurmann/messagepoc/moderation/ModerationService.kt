@@ -1,10 +1,10 @@
 package no.thurmann.messagepoc.moderation
 
-import no.thurmann.messagepoc.audit.AppUserRepository
-import no.thurmann.messagepoc.audit.MessageResult
-import no.thurmann.messagepoc.audit.MessageResultRepository
-import no.thurmann.messagepoc.audit.UserBan
-import no.thurmann.messagepoc.audit.UserBanRepository
+import no.thurmann.messagepoc.persistence.AppUserRepository
+import no.thurmann.messagepoc.persistence.MessageResult
+import no.thurmann.messagepoc.persistence.MessageResultRepository
+import no.thurmann.messagepoc.persistence.UserBan
+import no.thurmann.messagepoc.persistence.UserBanRepository
 import org.slf4j.LoggerFactory
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.core.RowCallbackHandler

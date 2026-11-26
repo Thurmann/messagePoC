@@ -1,7 +1,7 @@
 package no.thurmann.messagepoc.chat
 
-import no.thurmann.messagepoc.audit.MessageResult
-import no.thurmann.messagepoc.audit.MessageResultStatus
+import no.thurmann.messagepoc.persistence.MessageResult
+import no.thurmann.messagepoc.persistence.MessageResultStatus
 import tools.jackson.databind.json.JsonMapper
 import java.time.Instant
 import java.util.UUID

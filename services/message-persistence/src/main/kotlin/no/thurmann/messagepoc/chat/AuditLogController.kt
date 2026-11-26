@@ -1,4 +1,4 @@
-package no.thurmann.messagepoc.audit
+package no.thurmann.messagepoc.chat
 
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
