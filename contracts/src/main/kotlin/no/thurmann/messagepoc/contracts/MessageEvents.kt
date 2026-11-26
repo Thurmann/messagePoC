@@ -12,6 +12,8 @@ sealed interface MessageEvent {
     val correlationId: UUID
     val causationId: UUID?
     val producer: String
+    val profanityScore: Double?
+    val author: MessageAuthor?
 }
 
 data class MessageSubmittedEvent(
@@ -24,8 +26,8 @@ data class MessageSubmittedEvent(
     override val causationId: UUID? = null,
     override val producer: String,
     val payload: MessageSubmittedPayload,
-    val profanityScore: Double? = null,
-    val author: MessageAuthor? = null,
+    override val profanityScore: Double? = null,
+    override val author: MessageAuthor? = null,
 ) : MessageEvent
 
 data class MessageAuthor(
@@ -47,8 +49,8 @@ data class MessageValidatedEvent(
     override val causationId: UUID,
     override val producer: String,
     val payload: MessageValidatedPayload,
-    val profanityScore: Double? = null,
-    val author: MessageAuthor? = null,
+    override val profanityScore: Double? = null,
+    override val author: MessageAuthor? = null,
 ) : MessageEvent
 
 data class MessageValidatedPayload(
@@ -65,8 +67,8 @@ data class MessageRejectedEvent(
     override val causationId: UUID,
     override val producer: String,
     val payload: MessageRejectedPayload,
-    val profanityScore: Double? = null,
-    val author: MessageAuthor? = null,
+    override val profanityScore: Double? = null,
+    override val author: MessageAuthor? = null,
 ) : MessageEvent
 
 data class MessageRejectedPayload(

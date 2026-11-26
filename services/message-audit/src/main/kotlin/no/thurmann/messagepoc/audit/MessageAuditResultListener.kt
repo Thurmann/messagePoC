@@ -1,18 +1,16 @@
-package no.thurmann.messagepoc.view
+package no.thurmann.messagepoc.audit
 
 import no.thurmann.messagepoc.contracts.KafkaTopics
+import no.thurmann.messagepoc.contracts.MessageEvent
 import no.thurmann.messagepoc.contracts.MessageRejectedEvent
 import no.thurmann.messagepoc.contracts.MessageSubmittedEvent
 import no.thurmann.messagepoc.contracts.MessageValidatedEvent
 import org.slf4j.LoggerFactory
 import org.springframework.kafka.annotation.KafkaHandler
 import org.springframework.kafka.annotation.KafkaListener
-import org.springframework.kafka.core.KafkaTemplate
 import org.springframework.kafka.support.KafkaHeaders
 import org.springframework.messaging.handler.annotation.Header
 import org.springframework.stereotype.Component
-import java.util.UUID
-import java.util.concurrent.TimeUnit
 
 @Component
 @KafkaListener(topics = [KafkaTopics.MESSAGE_RESULTS, KafkaTopics.MESSAGE_SUBMITTED_DLT])
@@ -66,7 +64,7 @@ class MessageAuditResultListener {
     }
 
     private fun logResult(
-        event: no.thurmann.messagepoc.contracts.MessageEvent,
+        event: MessageEvent,
         result: String,
         text: String,
         reason: String?,
@@ -83,16 +81,8 @@ class MessageAuditResultListener {
             .addKeyValue("result", result)
             .addKeyValue("reason", reason)
             .addKeyValue("text", text)
-            .addKeyValue("profanityScore", when (event) {
-                is MessageValidatedEvent -> event.profanityScore
-                is MessageRejectedEvent -> event.profanityScore
-                else -> null
-            })
-            .addKeyValue("authorHandle", when (event) {
-                is MessageValidatedEvent -> event.author?.handle
-                is MessageRejectedEvent -> event.author?.handle
-                else -> null
-            })
+            .addKeyValue("profanityScore", event.profanityScore)
+            .addKeyValue("authorHandle", event.author?.handle)
             .addKeyValue("topic", topic)
             .addKeyValue("partition", partition)
             .addKeyValue("offset", offset)

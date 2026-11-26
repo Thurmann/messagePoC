@@ -1,4 +1,4 @@
-package no.thurmann.messagepoc.view
+package no.thurmann.messagepoc.audit
 
 import no.thurmann.messagepoc.contracts.KafkaTopics
 import org.apache.kafka.clients.consumer.ConsumerRecord
