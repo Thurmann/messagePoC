@@ -31,14 +31,14 @@ fun NpmTask.e2eInputs() {
         .withPathSensitivity(PathSensitivity.RELATIVE)
 }
 
-val viteBuild by tasks.registering(NpmTask::class) {
+val viteBuild = tasks.register<NpmTask>("viteBuild") {
     npmInputs()
     args = listOf("run", "build")
     outputs.dir(layout.buildDirectory.dir("vite"))
     outputs.cacheIf { true }
 }
 
-val typecheck by tasks.registering(NpmTask::class) {
+val typecheck = tasks.register<NpmTask>("typecheck") {
     npmInputs()
     e2eInputs()
     args = listOf("run", "typecheck")
@@ -46,7 +46,7 @@ val typecheck by tasks.registering(NpmTask::class) {
     outputs.cacheIf { true }
 }
 
-val unitTest by tasks.registering(NpmTask::class) {
+val unitTest = tasks.register<NpmTask>("unitTest") {
     group = "verification"
     npmInputs()
     args = listOf("run", "test")
@@ -56,7 +56,7 @@ val unitTest by tasks.registering(NpmTask::class) {
 
 // Browser tests run against `vite preview` of the production build with the real Content-Security-Policy.
 // They are not part of build/check; CI runs them in a separate job.
-val installPlaywrightBrowsers by tasks.registering(NpxTask::class) {
+val installPlaywrightBrowsers = tasks.register<NpxTask>("installPlaywrightBrowsers") {
     group = "verification"
     description = "Downloads the Chromium build Playwright drives (pass -PplaywrightWithDeps=true on Linux CI for system libraries)."
     dependsOn(tasks.npmInstall)
@@ -65,7 +65,7 @@ val installPlaywrightBrowsers by tasks.registering(NpxTask::class) {
     args = withDeps.map { deps -> listOf("install") + (if (deps) listOf("--with-deps") else emptyList()) + "chromium" }
 }
 
-val e2eTest by tasks.registering(NpmTask::class) {
+val e2eTest = tasks.register<NpmTask>("e2eTest") {
     group = "verification"
     description = "Runs the Playwright browser tests against the built frontend with mocked APIs."
     npmInputs()
