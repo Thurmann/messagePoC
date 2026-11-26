@@ -7,6 +7,8 @@ export interface ChatFeedService {
   addLine(line: ChatLine): void;
   patchLine(key: string, patch: Partial<ChatLine>): void;
   removeLine(key: string): void;
+  /** True when the id is a current line key or was already seen on the stream/history. */
+  knows(messageId: string): boolean;
 }
 
 interface RawChatEvent {
@@ -65,5 +67,9 @@ export function createChatFeed(ctx: Ctx): ChatFeedService {
     addLine(newLine(type, id, ev));
   }
 
-  return { handleChatEvent, addLine, patchLine, removeLine };
+  function knows(messageId: string): boolean {
+    return seen.has(messageId) || store.get().lines.some((l) => l.key === messageId);
+  }
+
+  return { handleChatEvent, addLine, patchLine, removeLine, knows };
 }

@@ -1,5 +1,6 @@
 import type { ApiErrorBody, OnlineUser, PresenceResponse } from '../api/types';
 import { patchMe, patchSlice, type Ctx } from '../core/ctx';
+import { bannedLeft } from '../core/selectors';
 
 export interface PresenceService {
   start(): void;
@@ -13,12 +14,6 @@ export interface PresenceService {
 const HEARTBEAT_MS = 30000;
 const POLL_MS = 15000;
 const TICK_MS = 1000;
-
-/** Seconds a user stays banned from `now`, 0 when not banned. */
-export function bannedLeftSeconds(user: OnlineUser, now: number): number {
-  const until = user.bannedUntil ? Date.parse(user.bannedUntil) : NaN;
-  return Number.isNaN(until) ? 0 : (until - now) / 1000;
-}
 
 export function createPresence(ctx: Ctx): PresenceService {
   const { deps, store } = ctx;
@@ -44,7 +39,7 @@ export function createPresence(ctx: Ctx): PresenceService {
     clearTick();
     bannedEnds = store
       .get()
-      .presence.users.filter((u) => u && u.handle && bannedLeftSeconds(u, now) > 0)
+      .presence.users.filter((u) => u && u.handle && bannedLeft(u, now) > 0)
       .map((u) => Date.parse(u.bannedUntil as string));
     if (bannedEnds.length) tickTimer = deps.setInterval(tick, TICK_MS);
   }

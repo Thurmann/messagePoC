@@ -286,6 +286,21 @@ describe('definite failures (P8)', () => {
     expect(JSON.parse(posts()[2]?.body ?? '').messageId).toBe(ID2);
   });
 
+  it('a failed id that later arrives on the stream is not reused (no duplicate line key)', async () => {
+    route(() => reply(503, { error: 'UNAVAILABLE' }), () => reply(202, {}));
+    await send('hello');
+    expect(lines()).toHaveLength(0);
+    await emit(h.publicStreams[0], 'message', { messageId: ID1, handle: 'alice', text: 'hello', occurredAt: '2025-03-01T12:00:05Z' });
+    expect(lines()).toHaveLength(1);
+    await send('hello');
+    const ids = posts().map((p) => JSON.parse(p.body ?? '').messageId as string);
+    expect(ids[0]).toBe(ID1);
+    expect(ids[1]).toBe(ID2);
+    const keys = lines().map((l) => l.key);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(keys).toEqual([ID1, ID2]);
+  });
+
   it('a 202 clears the last failure so the same text gets a fresh id', async () => {
     route(() => reply(503, { error: 'UNAVAILABLE' }), () => reply(202, {}), () => reply(202, {}));
     await send('a');

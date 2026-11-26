@@ -15,7 +15,7 @@ node {
 
 val configFiles = listOf(
     "package.json", "package-lock.json", "tsconfig.json", "tsconfig.node.json", "tsconfig.theme.json",
-    "tsconfig.e2e.json", "vite.config.ts", "index.html",
+    "vite.config.ts", "index.html",
 )
 
 fun NpmTask.npmInputs() {
@@ -23,8 +23,12 @@ fun NpmTask.npmInputs() {
     inputs.dir("src").withPathSensitivity(PathSensitivity.RELATIVE)
     inputs.dir("build-tools").withPathSensitivity(PathSensitivity.RELATIVE)
     inputs.files(configFiles).withPathSensitivity(PathSensitivity.RELATIVE)
+}
+
+fun NpmTask.e2eInputs() {
     inputs.dir("e2e").withPathSensitivity(PathSensitivity.RELATIVE)
-    inputs.files("playwright.config.ts", "playwright.smoke.config.ts").withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.files("tsconfig.e2e.json", "playwright.config.ts", "playwright.smoke.config.ts")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
 }
 
 val viteBuild by tasks.registering(NpmTask::class) {
@@ -36,6 +40,7 @@ val viteBuild by tasks.registering(NpmTask::class) {
 
 val typecheck by tasks.registering(NpmTask::class) {
     npmInputs()
+    e2eInputs()
     args = listOf("run", "typecheck")
     outputs.dir(layout.buildDirectory.dir("typecheck"))
     outputs.cacheIf { true }
@@ -64,6 +69,7 @@ val e2eTest by tasks.registering(NpmTask::class) {
     group = "verification"
     description = "Runs the Playwright browser tests against the built frontend with mocked APIs."
     npmInputs()
+    e2eInputs()
     dependsOn(viteBuild, installPlaywrightBrowsers)
     args = listOf("run", "e2e")
     outputs.upToDateWhen { false }
