@@ -5,82 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Live chat · Kafka PoC</title>
   <script src="/theme.js"></script>
-  <link rel="stylesheet" href="/src/app.css">
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand"><span class="eyebrow">Message PoC</span><h1>Live chat</h1></div>
-    <nav class="tabs" id="tabs" hidden>
-      <button type="button" class="tab active" id="tab-chat" data-tab="chat">Chat</button>
-      <button type="button" class="tab" id="tab-log" data-tab="log">Admin log</button>
-    </nav>
-    <div class="auth">
-      <button type="button" class="btn ghost theme-toggle" id="theme-toggle" aria-pressed="false" aria-label="Switch to dark mode" title="Switch to dark mode"><span class="theme-icon" aria-hidden="true">&#9790;</span><span class="theme-label">Dark</span></button>
-      <span class="conn" id="conn" title="Stream connection">offline</span>
-      <span class="version" id="version" hidden></span>
-      <div id="me" class="me" hidden>
-        <span class="me-handle" id="me-handle"></span>
-        <button type="button" class="btn ghost" id="signout">Sign out</button>
-      </div>
-      <div id="login" class="login" hidden>
-        <span class="btn primary" aria-hidden="true">Login</span>
-        <div id="gsi-button" class="login-gsi" title="Login"></div>
-      </div>
-    </div>
-  </header>
-
-  <div class="notice" id="setup" hidden></div>
-  <div class="banner warn" id="warn-banner" role="status" hidden></div>
-  <div class="banner ban" id="ban-banner" role="alert" hidden></div>
-
-  <main id="view-chat" class="layout no-users">
-    <aside class="users" id="users" aria-label="Online users" hidden>
-      <div class="label" id="users-label">Online · <span id="users-count">0</span></div>
-      <ul class="ulist" id="users-list"></ul>
-      <div class="empty" id="users-empty">No one else is online.</div>
-      <div class="error" id="users-error" role="alert" hidden></div>
-    </aside>
-    <section class="chat frame" aria-label="Chat">
-      <div class="lines" id="lines" role="log" aria-live="polite"></div>
-      <div class="error" id="send-error" role="alert" hidden></div>
-      <form class="composer" id="composer" autocomplete="off">
-        <input type="text" id="text" maxlength="500" placeholder="Sign in to chat" aria-label="Message" disabled>
-        <button type="submit" class="btn primary" id="send" disabled>Send</button>
-      </form>
-    </section>
-    <aside class="rail" id="rail" aria-label="Moderation" hidden>
-      <div class="label">Moderation</div>
-      <div class="cards" id="cards"></div>
-      <div class="empty" id="rail-empty">No flagged messages yet.</div>
-      <button type="button" class="btn ghost" id="audit-btn">Load audit logs</button>
-      <ul class="audit" id="audit"></ul>
-    </aside>
-  </main>
-
-  <main id="view-log" class="logview" hidden>
-    <div class="tablewrap">
-      <table>
-        <thead>
-          <tr><th>Time</th><th>User</th><th>Handle</th><th>Status</th><th>Score</th><th>Text</th><th>Reason</th><th>Strikes</th><th>Ban</th></tr>
-        </thead>
-        <tbody id="log-body"></tbody>
-      </table>
-    </div>
-  </main>
-
-  <dialog id="handle-dialog" class="dialog">
-    <form id="handle-form" method="dialog" autocomplete="off">
-      <h2>Choose your handle</h2>
-      <p class="hint">3-20 characters: letters, digits or underscore. It cannot be changed later.</p>
-      <input type="text" id="handle-input" maxlength="20" aria-label="Handle" required>
-      <div class="error" id="handle-error" role="alert" hidden></div>
-      <div class="actions">
-        <button type="button" class="btn ghost" id="handle-cancel">Cancel</button>
-        <button type="submit" class="btn primary" id="handle-save">Save handle</button>
-      </div>
-    </form>
-  </dialog>
-
-  <script type="module" src="/src/legacy/app.js"></script>
+  <div id="root"></div>
+  <script type="module" src="/src/main.tsx"></script>
 </body>
 </html>
