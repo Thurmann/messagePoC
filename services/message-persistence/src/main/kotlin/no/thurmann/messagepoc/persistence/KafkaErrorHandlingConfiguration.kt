@@ -1,4 +1,4 @@
-package no.thurmann.messagepoc.audit
+package no.thurmann.messagepoc.persistence
 
 import no.thurmann.messagepoc.contracts.KafkaTopics
 import org.apache.kafka.clients.consumer.ConsumerRecord

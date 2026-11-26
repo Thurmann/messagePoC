@@ -1,6 +1,6 @@
 package no.thurmann.messagepoc.moderation
 
-import no.thurmann.messagepoc.audit.MessageResultStatus
+import no.thurmann.messagepoc.persistence.MessageResultStatus
 import java.time.Duration
 import java.time.Instant
 import kotlin.test.Test

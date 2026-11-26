@@ -1,6 +1,6 @@
 package no.thurmann.messagepoc.moderation
 
-import no.thurmann.messagepoc.audit.MessageResult
+import no.thurmann.messagepoc.persistence.MessageResult
 import no.thurmann.messagepoc.contracts.KafkaTopics
 import no.thurmann.messagepoc.contracts.MessageSubmittedEvent
 import org.slf4j.LoggerFactory

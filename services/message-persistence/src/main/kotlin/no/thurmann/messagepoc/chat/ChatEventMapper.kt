@@ -1,8 +1,8 @@
 package no.thurmann.messagepoc.chat
 
 import com.fasterxml.jackson.annotation.JsonInclude
-import no.thurmann.messagepoc.audit.MessageResult
-import no.thurmann.messagepoc.audit.MessageResultStatus
+import no.thurmann.messagepoc.persistence.MessageResult
+import no.thurmann.messagepoc.persistence.MessageResultStatus
 import java.time.Instant
 import java.util.UUID
 

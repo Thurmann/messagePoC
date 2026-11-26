@@ -1,4 +1,4 @@
-package no.thurmann.messagepoc.audit
+package no.thurmann.messagepoc.persistence
 
 import jakarta.persistence.Column
 import jakarta.persistence.Entity

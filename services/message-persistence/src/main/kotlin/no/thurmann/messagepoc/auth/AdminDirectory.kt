@@ -1,6 +1,6 @@
 package no.thurmann.messagepoc.auth
 
-import no.thurmann.messagepoc.audit.AdminUserRepository
+import no.thurmann.messagepoc.persistence.AdminUserRepository
 import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.stereotype.Component
 import java.util.concurrent.ConcurrentHashMap
