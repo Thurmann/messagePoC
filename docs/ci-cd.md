@@ -4,7 +4,7 @@ Three GitHub Actions workflows live in `.github/workflows`:
 
 | Workflow | Trigger | What it does |
 | --- | --- | --- |
-| `ci.yml` | Pull requests, pushes to `main`, manual | `./gradlew build` (unit and Testcontainers integration tests), a Docker build of each of the four service images from the jars that build packaged (not pushed), and a `kubectl kustomize` render of `deploy/kubernetes`, `deploy/kubernetes/kafka` and `deploy/azure`, and the `Azure scripts` job (ShellCheck and the stub-based tests of the Azure up/down scripts, no Azure access). On `main`, it then tags the next version and calls `release.yml` |
+| `ci.yml` | Pull requests, pushes to `main`, manual | `./gradlew build` (unit and Testcontainers integration tests), a Docker build of each of the four service images from the jars that build packaged (not pushed), and a `kubectl kustomize` render of `deploy/kubernetes`, `deploy/kubernetes/kafka` and `deploy/azure`, the `Browser tests` job (Playwright against the production frontend build with the backend mocked, `./gradlew :frontend:e2eTest`, no Docker), and the `Azure scripts` job (ShellCheck and the stub-based tests of the Azure up/down scripts, no Azure access). On `main`, it then tags the next version and calls `release.yml` |
 | `release.yml` | Called by `ci.yml`, or tags `v*.*.*` pushed by hand | Builds the jars (without running the tests again when called by CI, since CI has just tested the same commit; a tag pushed by hand runs the full build and tests), pushes the images built from those jars to GHCR, creates the GitHub release, and deploys stable releases to AKS when deployment is enabled |
 | `deploy.yml` | Called by `release.yml`, or run manually with a version | Imports a released version's images into ACR and applies `deploy/azure` from that release tag to AKS |
 
@@ -24,6 +24,9 @@ Every push to `main` that passes CI is released. The `Tag release` job in `ci.ym
 bumps the patch version of the latest stable tag (`v0.1.0` → `v0.1.1`), pushes the
 tag, and calls the release workflow. For a minor or major release, run **CI** from
 the Actions tab on `main` and choose `minor` or `major`.
+
+The tag job waits for the build, image, browser test, manifest and script jobs, so a
+failing browser test blocks the release.
 
 The tag is pushed with `GITHUB_TOKEN`, so no personal access token is needed.
 Tags pushed with that token do not start other workflows, which is why CI calls
