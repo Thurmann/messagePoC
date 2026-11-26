@@ -12,3 +12,5 @@ out
 *.iml
 README.md
 docs
+**/node_modules
+**/.gradle
