@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitReturns": true,
+    "target": "ES2017",
+    "lib": ["ES2017", "DOM"],
+    "module": "None",
+    "noEmit": true,
+    "incremental": true,
+    "tsBuildInfoFile": "build/typecheck/theme.tsbuildinfo",
+    "skipLibCheck": true,
+    "types": []
+  },
+  "include": ["src/theme/prepaint.ts"]
+}
