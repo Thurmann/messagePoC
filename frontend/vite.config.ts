@@ -1,10 +1,11 @@
+import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vitest/config';
 import { CSP } from './build-tools/csp';
 import { themeScript } from './build-tools/themeScript';
 
 export default defineConfig({
   base: '/',
-  plugins: [themeScript()],
+  plugins: [react(), themeScript()],
   build: {
     outDir: 'build/vite',
     emptyOutDir: true,
