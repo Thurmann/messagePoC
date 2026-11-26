@@ -31,6 +31,8 @@ replay_pid*
 
 # Node
 node_modules/
+frontend/playwright-report/
+frontend/test-results/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

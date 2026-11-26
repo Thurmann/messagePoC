@@ -29,8 +29,19 @@ class SecurityIT : AbstractIntegrationTest() {
         mvc.get("/api/chat/history").andExpect { status { isOk() } }
         mvc.get("/api/chat/kafka-status").andExpect { status { isOk() }; jsonPath("$.status") { value("UNKNOWN") } }
         mvc.get("/").andExpect { status { isOk() } }
-        mvc.get("/js/theme.js").andExpect { status { isOk() } }
+        mvc.get("/theme.js").andExpect { status { isOk() } }
         mvc.get("/actuator/health").andExpect { status { isOk() } }
+    }
+
+    @Test
+    fun `packaged index references hashed assets and has no inline script`() {
+        val html = mvc.get("/index.html").andExpect { status { isOk() } }.andReturn().response.contentAsString
+        val assets = Regex("""(?:src|href)="(/assets/[^"]+\.(?:js|css))"""").findAll(html).map { it.groupValues[1] }.toList()
+        assertTrue(assets.any { it.endsWith(".js") }, "no hashed js in $html")
+        assertTrue(assets.any { it.endsWith(".css") }, "no hashed css in $html")
+        assets.forEach { mvc.get(it).andExpect { status { isOk() } } }
+        assertFalse(Regex("<script(?![^>]*\\bsrc=)").containsMatchIn(html), "inline script in $html")
+        assertNotEquals(200, mvc.get("/js/app.js").andReturn().response.status)
     }
 
     @Test
