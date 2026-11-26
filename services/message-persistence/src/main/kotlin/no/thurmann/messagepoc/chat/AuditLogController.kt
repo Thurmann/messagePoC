@@ -1,8 +1,8 @@
 package no.thurmann.messagepoc.chat
 
+import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
-import org.slf4j.LoggerFactory
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
@@ -17,6 +17,11 @@ import java.net.http.HttpResponse
 import java.nio.charset.StandardCharsets.UTF_8
 import java.time.Duration
 import java.time.Instant
+
+// Must match the log messages written by message-audit's MessageAuditResultListener ("Message result received",
+// "Received DLT event on type=" and the legacy "Received unsupported message result type="); changing either side breaks the other.
+private const val AUDIT_LOG_QUERY =
+    "{service=\"message-audit\"} |~ \"Message result received|Received DLT event on type=|Received unsupported message result type=\""
 
 @RestController
 @RequestMapping("/api/audit-logs")
@@ -35,7 +40,7 @@ class AuditLogController(
         val start = end.minusSeconds(24 * 60 * 60)
 
         val query = listOf(
-            "query" to "{service=\"message-audit\"} |~ \"Message result received|Received DLT event on type=|Received unsupported message result type=\"",
+            "query" to AUDIT_LOG_QUERY,
             "start" to start.toString(),
             "end" to end.toString(),
             "limit" to "50",
@@ -60,42 +65,46 @@ class AuditLogController(
             throw ResponseStatusException(HttpStatus.BAD_GATEWAY, "Could not read message-audit logs from Loki", exception)
         }
 
-        return response.path("data").path("result").valueStream()
-            .flatMap { stream -> stream.path("values").valueStream() }
-            .toList()
-            .mapNotNull { toAuditLogEntry(it) }
-            .sortedByDescending { it.timestamp }
-            .toList()
+        return parseAuditLogEntries(response, objectMapper)
     }
-
-    private fun toAuditLogEntry(value: JsonNode): AuditLogEntry? {
-        if (value.size() < 2) return null
-
-        val timestampNanos = value[0].textValue()?.toLongOrNull() ?: return null
-        val timestamp = Instant.ofEpochSecond(0, timestampNanos)
-        val logLine = value[1].textValue() ?: return null
-        val fields = runCatching { objectMapper.readTree(logLine) }.getOrNull() ?: return null
-        val rawMessage = fields.text("message") ?: "Message audit log"
-        val legacyDltType = rawMessage
-            .takeIf { it.startsWith("Received unsupported message result type=") }
-            ?.removePrefix("Received unsupported message result type=")
-            ?.takeIf { it == "no.thurmann.messagepoc.contracts.MessageSubmittedEvent" }
-        val isDlt = fields.text("result") == "DLT" || legacyDltType != null
-
-        return AuditLogEntry(
-            timestamp = timestamp,
-            message = if (legacyDltType != null) "Received DLT event on type=$legacyDltType" else rawMessage,
-            result = if (isDlt) "DLT" else fields.text("result"),
-            text = fields.text("text"),
-            messageId = fields.text("messageId"),
-            correlationId = fields.text("correlationId"),
-            profanityScore = fields.get("profanityScore")?.takeIf(JsonNode::isNumber)?.doubleValue(),
-        )
-    }
-
-    private fun JsonNode.text(name: String): String? =
-        get(name)?.takeUnless(JsonNode::isNull)?.textValue()
 }
+
+/** Parses a Loki `query_range` response into audit entries, newest first; lines that are not message-audit JSON are skipped. */
+internal fun parseAuditLogEntries(response: JsonNode, objectMapper: ObjectMapper): List<AuditLogEntry> =
+    response.path("data").path("result").valueStream()
+        .flatMap { stream -> stream.path("values").valueStream() }
+        .toList()
+        .mapNotNull { toAuditLogEntry(it, objectMapper) }
+        .sortedByDescending { it.timestamp }
+        .toList()
+
+private fun toAuditLogEntry(value: JsonNode, objectMapper: ObjectMapper): AuditLogEntry? {
+    if (value.size() < 2) return null
+
+    val timestampNanos = value[0].textValue()?.toLongOrNull() ?: return null
+    val timestamp = Instant.ofEpochSecond(0, timestampNanos)
+    val logLine = value[1].textValue() ?: return null
+    val fields = runCatching { objectMapper.readTree(logLine) }.getOrNull() ?: return null
+    val rawMessage = fields.text("message") ?: "Message audit log"
+    val legacyDltType = rawMessage
+        .takeIf { it.startsWith("Received unsupported message result type=") }
+        ?.removePrefix("Received unsupported message result type=")
+        ?.takeIf { it == "no.thurmann.messagepoc.contracts.MessageSubmittedEvent" }
+    val isDlt = fields.text("result") == "DLT" || legacyDltType != null
+
+    return AuditLogEntry(
+        timestamp = timestamp,
+        message = if (legacyDltType != null) "Received DLT event on type=$legacyDltType" else rawMessage,
+        result = if (isDlt) "DLT" else fields.text("result"),
+        text = fields.text("text"),
+        messageId = fields.text("messageId"),
+        correlationId = fields.text("correlationId"),
+        profanityScore = fields.get("profanityScore")?.takeIf(JsonNode::isNumber)?.doubleValue(),
+    )
+}
+
+private fun JsonNode.text(name: String): String? =
+    get(name)?.takeUnless(JsonNode::isNull)?.textValue()
 
 private fun String.encodeQueryValue(): String = URLEncoder.encode(this, UTF_8)
 

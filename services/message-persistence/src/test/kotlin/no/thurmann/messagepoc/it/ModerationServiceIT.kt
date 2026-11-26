@@ -1,12 +1,12 @@
 package no.thurmann.messagepoc.it
 
-import no.thurmann.messagepoc.persistence.MessageResultStatus
 import no.thurmann.messagepoc.contracts.MessageAuthor
 import no.thurmann.messagepoc.contracts.MessageSubmittedEvent
 import no.thurmann.messagepoc.contracts.MessageSubmittedPayload
-import no.thurmann.messagepoc.persistence.MessageResult
 import no.thurmann.messagepoc.moderation.ManualBanResult
 import no.thurmann.messagepoc.moderation.ModerationService
+import no.thurmann.messagepoc.persistence.MessageResult
+import no.thurmann.messagepoc.persistence.MessageResultStatus
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import java.time.Duration

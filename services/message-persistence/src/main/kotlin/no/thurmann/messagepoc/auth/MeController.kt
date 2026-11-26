@@ -1,9 +1,10 @@
 package no.thurmann.messagepoc.auth
 
-import no.thurmann.messagepoc.persistence.AppUserRepository
 import no.thurmann.messagepoc.moderation.ModerationPolicy
 import no.thurmann.messagepoc.moderation.ModerationProperties
 import no.thurmann.messagepoc.moderation.ModerationService
+import no.thurmann.messagepoc.persistence.AppUser
+import no.thurmann.messagepoc.persistence.AppUserRepository
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -34,9 +35,7 @@ class MeController(
         val strikes = moderationService.currentStrikes(user.googleSub)
         val now = Instant.now()
         val isAdmin = adminDirectory.isAdmin(jwt)
-        val ban = if (isAdmin) null else moderationService.activeBan(user.googleSub, now)?.let {
-            BanInfo(until = it.endsAt, remainingSeconds = Duration.between(now, it.endsAt).seconds.coerceAtLeast(0))
-        }
+        val ban = if (isAdmin) null else moderationService.activeBan(user.googleSub, now)?.let { BanInfo.of(it.endsAt, now) }
         return MeResponse(
             email = user.email,
             handle = user.handle,
@@ -67,7 +66,7 @@ class MeController(
         return ResponseEntity.ok(mapOf("handle" to handle))
     }
 
-    private fun upsertUser(jwt: Jwt) =
+    private fun upsertUser(jwt: Jwt): AppUser {
         jdbcTemplate.update(
             """
             INSERT INTO app_user (google_sub, email, created_at, last_login_at) VALUES (?, ?, now(), now())
@@ -75,12 +74,18 @@ class MeController(
             """.trimIndent(),
             jwt.subject!!,
             jwt.getClaimAsString("email") ?: "",
-        ).let { appUserRepository.findById(jwt.subject!!).orElseThrow() }
+        )
+        return appUserRepository.findById(jwt.subject!!).orElseThrow()
+    }
 }
 
 data class HandleRequest(val handle: String? = null)
 
-data class BanInfo(val until: Instant, val remainingSeconds: Long)
+data class BanInfo(val until: Instant, val remainingSeconds: Long) {
+    companion object {
+        fun of(until: Instant, now: Instant) = BanInfo(until, Duration.between(now, until).seconds.coerceAtLeast(0))
+    }
+}
 
 data class MeResponse(
     val email: String,

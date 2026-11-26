@@ -1,12 +1,13 @@
 package no.thurmann.messagepoc.chat
 
+import no.thurmann.messagepoc.moderation.ModerationService
 import no.thurmann.messagepoc.persistence.AppUserRepository
 import no.thurmann.messagepoc.persistence.MessageResult
 import no.thurmann.messagepoc.persistence.MessageResultRepository
 import no.thurmann.messagepoc.persistence.MessageResultStatus
-import no.thurmann.messagepoc.moderation.ModerationService
 import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
+import java.util.UUID
 
 @Service
 class ChatQueryService(
@@ -27,7 +28,7 @@ class ChatQueryService(
             ),
         )
 
-    fun byMessageId(messageId: java.util.UUID): List<MessageResult> =
+    fun byMessageId(messageId: UUID): List<MessageResult> =
         messageResultRepository.findAllByMessageId(messageId)
 
     fun adminRows(results: List<MessageResult>): List<AdminModerationRow> {

@@ -52,7 +52,7 @@ class ModerationService(
             val strike = policy.countsAsStrike(result.status, result.profanityScore)
             val previousBan = userBanRepository.findFirstByUserIdOrderByEndsAtDesc(authorId)?.toPreviousBan()
             result.strike = strike
-            result.strikesAfter = strikesAfter(currentStrikes(authorId, previousBan), strike)
+            result.strikesAfter = currentStrikes(authorId, previousBan) + if (strike) 1 else 0
             messageResultRepository.save(result)
 
             if (strike) {
@@ -137,8 +137,4 @@ class ModerationService(
         ) == true
 
     private fun UserBan.toPreviousBan() = PreviousBan(step = step, endsAt = endsAt)
-
-    companion object {
-        fun strikesAfter(existingStrikes: Int, strike: Boolean): Int = existingStrikes + if (strike) 1 else 0
-    }
 }
