@@ -7,9 +7,9 @@ import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult
 import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.security.oauth2.jwt.JwtTimestampValidator
 
-/** Keep in sync with the copy in message-api's GoogleJwtValidator. */
 private val GOOGLE_ISSUERS = setOf("https://accounts.google.com", "accounts.google.com")
 
+/** Identical copy in message-api api/GoogleJwtValidator.kt; keep both in sync (services deploy independently). */
 class GoogleClaimsValidator(private val clientId: String) : OAuth2TokenValidator<Jwt> {
     override fun validate(token: Jwt): OAuth2TokenValidatorResult {
         if (clientId.isBlank()) return failure("Google client id is not configured")

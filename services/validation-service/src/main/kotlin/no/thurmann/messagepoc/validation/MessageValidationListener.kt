@@ -33,7 +33,11 @@ class MessageValidationListener(
         val decision = validationRule.decide(profanityScore)
 
         if (decision == ValidationDecision.DLT) {
-            val sendResult = send(KafkaTopics.MESSAGE_SUBMITTED_DLT, event.messageId.toString(), event.copy(profanityScore = profanityScore))
+            val sendResult = send(
+                KafkaTopics.MESSAGE_SUBMITTED_DLT,
+                event.messageId.toString(),
+                event.copy(profanityScore = profanityScore),
+            )
 
             logger.atWarn()
                 .addKeyValue("eventId", event.eventId)

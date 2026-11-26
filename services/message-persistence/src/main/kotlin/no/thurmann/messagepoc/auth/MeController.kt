@@ -35,7 +35,8 @@ class MeController(
         val strikes = moderationService.currentStrikes(user.googleSub)
         val now = Instant.now()
         val isAdmin = adminDirectory.isAdmin(jwt)
-        val ban = if (isAdmin) null else moderationService.activeBan(user.googleSub, now)?.let { BanInfo.of(it.endsAt, now) }
+        val ban = if (isAdmin) null else moderationService.activeBan(user.googleSub, now)
+            ?.let { BanInfo.of(it.endsAt, now) }
         return MeResponse(
             email = user.email,
             handle = user.handle,

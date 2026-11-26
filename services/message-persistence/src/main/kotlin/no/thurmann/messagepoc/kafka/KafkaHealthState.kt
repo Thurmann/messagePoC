@@ -27,7 +27,7 @@ class KafkaHealthState(private val failuresBeforeDown: Int = 2) {
 
     /** Returns true when the state changed. */
     @Synchronized
-    fun recordFailure(now: Instant, reason: String): Boolean {
+    fun recordFailure(now: Instant): Boolean {
         checkedAt = now
         consecutiveFailures++
         return if (consecutiveFailures >= failuresBeforeDown) transition(KafkaWriteStatus.DOWN, now) else false

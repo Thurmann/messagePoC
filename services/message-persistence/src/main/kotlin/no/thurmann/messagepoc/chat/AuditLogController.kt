@@ -76,7 +76,6 @@ internal fun parseAuditLogEntries(response: JsonNode, objectMapper: ObjectMapper
         .toList()
         .mapNotNull { toAuditLogEntry(it, objectMapper) }
         .sortedByDescending { it.timestamp }
-        .toList()
 
 private fun toAuditLogEntry(value: JsonNode, objectMapper: ObjectMapper): AuditLogEntry? {
     if (value.size() < 2) return null
