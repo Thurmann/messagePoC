@@ -27,7 +27,7 @@ class SecurityConfig(
                 auth
                     .dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR).permitAll()
                     .requestMatchers(
-                        "/", "/index.html", "/app.css", "/js/**", "/favicon.ico",
+                        "/", "/index.html", "/theme.js", "/assets/**", "/favicon.ico",
                         "/api/config", "/api/chat/history", "/api/chat/stream", "/api/chat/kafka-status",
                         "/actuator/health/**", "/actuator/health",
                     ).permitAll()
@@ -50,6 +50,7 @@ class SecurityConfig(
     }
 }
 
+// KEEP IN SYNC with frontend/build-tools/csp.ts (used by `vite preview` in the Playwright suite).
 fun contentSecurityPolicy(messageApiBaseUrl: String): String {
     val connect = listOf("'self'", "https://accounts.google.com/gsi/", messageApiBaseUrl.trim().trimEnd('/'))
         .filter { it.isNotEmpty() }
