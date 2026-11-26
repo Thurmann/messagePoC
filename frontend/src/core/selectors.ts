@@ -151,7 +151,8 @@ export interface UserRow {
   banLabel: string;
 }
 
-function bannedLeft(user: OnlineUser, now: number): number {
+/** Seconds a user stays banned from `now`, 0 when not banned. */
+export function bannedLeft(user: OnlineUser, now: number): number {
   const until = user.bannedUntil ? Date.parse(user.bannedUntil) : NaN;
   return Number.isNaN(until) ? 0 : (until - now) / 1000;
 }

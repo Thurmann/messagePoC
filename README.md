@@ -419,7 +419,16 @@ npm run dev
 
 It serves <http://localhost:5173> and proxies `/api` to `http://localhost:8083`. Google
 sign-in there needs `http://localhost:5173` in the OAuth client's authorized JavaScript
-origins. Other commands:
+origins. Sending from the dev server is blocked by CORS by default, because
+`/api/config` points the UI at `http://localhost:8080` and message-api only allows
+`http://localhost:8083`. Add the dev origin (comma-separated) to `.env` and restart
+message-api:
+
+```bash
+CORS_ALLOWED_ORIGINS=http://localhost:8083,http://localhost:5173
+```
+
+Other commands:
 
 - `npm test` and `npm run typecheck` (from `frontend/`): Vitest unit and component
   tests, and `tsc`.

@@ -125,7 +125,7 @@ export function createSender(ctx: Ctx): SenderService {
   function sendMessage(text: string, reuseId: string | null): void {
     setSendError('');
     // never overwrite a pending entry
-    const messageId = !reuseId || pending.has(reuseId) ? deps.randomUUID() : reuseId;
+    const messageId = !reuseId || pending.has(reuseId) || ctx.chatFeed.knows(reuseId) ? deps.randomUUID() : reuseId;
     ctx.chatFeed.addLine({
       key: messageId,
       kind: 'user',

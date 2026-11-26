@@ -28,7 +28,10 @@ export function HandleDialog() {
   }
 
   return (
-    <dialog id="handle-dialog" className="dialog" ref={dialogRef} onClose={() => actions.closeHandleDialog()}>
+    <dialog id="handle-dialog" className="dialog" ref={dialogRef} onClose={(e) => {
+        // a stale queued close event after a quick reopen must not close the dialog again
+        if (!e.currentTarget.open) actions.closeHandleDialog();
+      }}>
       <form id="handle-form" method="dialog" autoComplete="off" onSubmit={onSubmit}>
         <h2>Choose your handle</h2>
         <p className="hint">3-20 characters: letters, digits or underscore. It cannot be changed later.</p>

@@ -1,9 +1,11 @@
+import { useMemo } from 'react';
 import { logRowView } from '../core/selectors';
 import { useAppState } from './AppContext';
 
 export function LogView() {
   const show = useAppState((s) => s.admin.tab === 'log');
-  const rows = useAppState((s) => s.admin.entries.map(logRowView));
+  const entries = useAppState((s) => s.admin.entries);
+  const rows = useMemo(() => entries.map(logRowView), [entries]);
   return (
     <main id="view-log" className="logview" hidden={!show}>
       <div className="tablewrap">

@@ -1,10 +1,12 @@
+import { useMemo } from 'react';
 import { cardView } from '../core/selectors';
 import { useActions, useAppState } from './AppContext';
 
 export function ModerationRail() {
   const actions = useActions();
   const isAdmin = useAppState((s) => !!(s.auth.token && s.auth.me?.isAdmin));
-  const cards = useAppState((s) => s.admin.entries.map(cardView));
+  const entries = useAppState((s) => s.admin.entries);
+  const cards = useMemo(() => entries.map(cardView), [entries]);
   const audit = useAppState((s) => s.admin.audit);
   return (
     <aside className="rail" id="rail" aria-label="Moderation" hidden={!isAdmin}>
