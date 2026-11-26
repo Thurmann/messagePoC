@@ -1,20 +1,14 @@
 package no.thurmann.messagepoc.validation
 
 import no.thurmann.messagepoc.contracts.KafkaTopics
-import no.thurmann.messagepoc.contracts.MessageEvent
-import no.thurmann.messagepoc.contracts.MessageRejectedEvent
-import no.thurmann.messagepoc.contracts.MessageRejectedPayload
 import no.thurmann.messagepoc.contracts.MessageSubmittedEvent
-import no.thurmann.messagepoc.contracts.MessageValidatedEvent
-import no.thurmann.messagepoc.contracts.MessageValidatedPayload
 import org.slf4j.LoggerFactory
 import org.springframework.kafka.annotation.KafkaListener
 import org.springframework.kafka.core.KafkaTemplate
 import org.springframework.kafka.support.KafkaHeaders
+import org.springframework.kafka.support.SendResult
 import org.springframework.messaging.handler.annotation.Header
 import org.springframework.stereotype.Component
-import java.time.Instant
-import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 @Component
@@ -39,9 +33,7 @@ class MessageValidationListener(
         val decision = validationRule.decide(profanityScore)
 
         if (decision == ValidationDecision.DLT) {
-            val sendResult = kafkaTemplate
-                .send(KafkaTopics.MESSAGE_SUBMITTED_DLT, event.messageId.toString(), event.copy(profanityScore = profanityScore))
-                .get(5, TimeUnit.SECONDS)
+            val sendResult = send(KafkaTopics.MESSAGE_SUBMITTED_DLT, event.messageId.toString(), event.copy(profanityScore = profanityScore))
 
             logger.atWarn()
                 .addKeyValue("eventId", event.eventId)
@@ -61,9 +53,7 @@ class MessageValidationListener(
 
         val result = buildResultEvent(event, decision, profanityScore, validationRule.rejectThreshold)
 
-        val sendResult = kafkaTemplate
-            .send(KafkaTopics.MESSAGE_RESULTS, event.messageId.toString(), result)
-            .get(5, TimeUnit.SECONDS)
+        val sendResult = send(KafkaTopics.MESSAGE_RESULTS, event.messageId.toString(), result)
 
         logger.atInfo()
             .addKeyValue("eventId", result.eventId)
@@ -80,77 +70,10 @@ class MessageValidationListener(
             .addKeyValue("targetOffset", sendResult.recordMetadata.offset())
             .log("Message validation completed")
     }
+
+    private fun send(topic: String, key: String, value: Any): SendResult<String, Any> =
+        kafkaTemplate.send(topic, key, value).get(SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS)
 }
 
 private const val DLT_TEST_MESSAGE = "__FORCE_DLT__"
-
-internal fun buildResultEvent(
-    event: MessageSubmittedEvent,
-    decision: ValidationDecision,
-    profanityScore: Double,
-    rejectThreshold: Double,
-    eventId: UUID = UUID.randomUUID(),
-    occurredAt: Instant = Instant.now(),
-): MessageEvent =
-    if (decision == ValidationDecision.ACCEPT) {
-        MessageValidatedEvent(
-            eventId = eventId,
-            occurredAt = occurredAt,
-            messageId = event.messageId,
-            correlationId = event.correlationId,
-            causationId = event.eventId,
-            producer = "validation-service",
-            payload = MessageValidatedPayload(event.payload.text),
-            profanityScore = profanityScore,
-            author = event.author,
-        )
-    } else {
-        MessageRejectedEvent(
-            eventId = eventId,
-            occurredAt = occurredAt,
-            messageId = event.messageId,
-            correlationId = event.correlationId,
-            causationId = event.eventId,
-            producer = "validation-service",
-            payload = MessageRejectedPayload(
-                text = event.payload.text,
-                reason = "PROFANITY_SCORE_ABOVE_$rejectThreshold (score=$profanityScore)",
-            ),
-            profanityScore = profanityScore,
-            author = event.author,
-        )
-    }
-
-@Component
-class ValidationRule(
-    private val profanityScorer: ProfanityScorer,
-    @org.springframework.beans.factory.annotation.Value("\${moderation.reject-threshold:0.65}")
-    val rejectThreshold: Double,
-    @org.springframework.beans.factory.annotation.Value("\${moderation.dlt-threshold:0.95}")
-    private val dltThreshold: Double,
-) {
-    init {
-        require(rejectThreshold >= 0.0 && rejectThreshold < dltThreshold && dltThreshold <= 1.0) {
-            "Moderation thresholds must satisfy 0 <= reject < DLT <= 1"
-        }
-    }
-
-    fun score(text: String): Double = profanityScorer.score(text).also {
-        require(it.isFinite() && it in 0.0..1.0) { "Profanity score must be between 0 and 1" }
-    }
-
-    fun decide(score: Double): ValidationDecision {
-        require(score.isFinite() && score in 0.0..1.0) { "Profanity score must be between 0 and 1" }
-        return when {
-            score > dltThreshold -> ValidationDecision.DLT
-            score > rejectThreshold -> ValidationDecision.REJECT
-            else -> ValidationDecision.ACCEPT
-        }
-    }
-}
-
-enum class ValidationDecision {
-    ACCEPT,
-    REJECT,
-    DLT,
-}
+private const val SEND_TIMEOUT_SECONDS = 5L
