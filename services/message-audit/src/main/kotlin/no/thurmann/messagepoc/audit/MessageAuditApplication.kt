@@ -1,4 +1,4 @@
-package no.thurmann.messagepoc.view
+package no.thurmann.messagepoc.audit
 
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.runApplication
