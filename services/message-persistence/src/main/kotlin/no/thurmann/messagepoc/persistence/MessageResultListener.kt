@@ -25,9 +25,7 @@ class MessageResultListener(
         @Header(KafkaHeaders.RECEIVED_PARTITION) partition: Int,
         @Header(KafkaHeaders.OFFSET) offset: Long,
     ) {
-        val result = MessageResult.from(event)
-        moderationService.record(result)
-        logResult(result, topic, partition, offset)
+        store(MessageResult.from(event), topic, partition, offset)
     }
 
     @KafkaHandler
@@ -37,17 +35,16 @@ class MessageResultListener(
         @Header(KafkaHeaders.RECEIVED_PARTITION) partition: Int,
         @Header(KafkaHeaders.OFFSET) offset: Long,
     ) {
-        val result = MessageResult.from(event)
-        moderationService.record(result)
-        logResult(result, topic, partition, offset)
+        store(MessageResult.from(event), topic, partition, offset)
     }
 
-    private fun logResult(
+    private fun store(
         result: MessageResult,
         topic: String,
         partition: Int,
         offset: Long,
     ) {
+        moderationService.record(result)
         logger.atInfo()
             .addKeyValue("eventId", result.eventId)
             .addKeyValue("eventType", result.eventType)

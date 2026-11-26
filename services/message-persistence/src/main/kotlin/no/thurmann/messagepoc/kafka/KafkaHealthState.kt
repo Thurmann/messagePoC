@@ -16,14 +16,12 @@ class KafkaHealthState(private val failuresBeforeDown: Int = 2) {
     private var since: Instant? = null
     private var checkedAt: Instant? = null
     private var consecutiveFailures = 0
-    private var lastReason: String? = null
 
     /** Returns true when the state changed. */
     @Synchronized
     fun recordSuccess(now: Instant): Boolean {
         checkedAt = now
         consecutiveFailures = 0
-        lastReason = null
         return transition(KafkaWriteStatus.UP, now)
     }
 
@@ -31,19 +29,12 @@ class KafkaHealthState(private val failuresBeforeDown: Int = 2) {
     @Synchronized
     fun recordFailure(now: Instant, reason: String): Boolean {
         checkedAt = now
-        lastReason = reason
         consecutiveFailures++
         return if (consecutiveFailures >= failuresBeforeDown) transition(KafkaWriteStatus.DOWN, now) else false
     }
 
     @Synchronized
     fun view(): KafkaStatusView = KafkaStatusView(status.name, since, checkedAt)
-
-    @Synchronized
-    fun current(): KafkaWriteStatus = status
-
-    @Synchronized
-    fun lastFailureReason(): String? = lastReason
 
     private fun transition(to: KafkaWriteStatus, now: Instant): Boolean {
         if (status == to) return false

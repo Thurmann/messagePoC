@@ -1,5 +1,6 @@
 package no.thurmann.messagepoc.chat
 
+import no.thurmann.messagepoc.auth.BanInfo
 import no.thurmann.messagepoc.auth.HandleRules
 import no.thurmann.messagepoc.moderation.ManualBanResult
 import no.thurmann.messagepoc.moderation.ModerationService
@@ -14,7 +15,6 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
-import java.time.Duration
 import java.time.Instant
 
 @RestController
@@ -44,7 +44,7 @@ class AdminController(
                     "handle" to result.handle,
                     "step" to result.step,
                     "until" to result.until,
-                    "remainingSeconds" to Duration.between(Instant.now(), result.until).seconds.coerceAtLeast(0),
+                    "remainingSeconds" to BanInfo.of(result.until, Instant.now()).remainingSeconds,
                 ),
             )
             ManualBanResult.UnknownHandle -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(mapOf("error" to "UNKNOWN_HANDLE"))

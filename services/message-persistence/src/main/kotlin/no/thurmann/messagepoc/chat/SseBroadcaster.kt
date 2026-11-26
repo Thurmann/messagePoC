@@ -1,6 +1,7 @@
 package no.thurmann.messagepoc.chat
 
 import jakarta.annotation.PreDestroy
+import no.thurmann.messagepoc.kafka.KafkaStatusView
 import org.slf4j.LoggerFactory
 import org.springframework.http.CacheControl
 import org.springframework.http.MediaType
@@ -97,7 +98,7 @@ class SseBroadcaster {
 
     fun publishAdmin(row: AdminModerationRow) = publish(adminSubscribers, "moderation", row)
 
-    fun publishKafkaStatus(status: no.thurmann.messagepoc.kafka.KafkaStatusView) = publish(publicSubscribers, "kafka", status)
+    fun publishKafkaStatus(status: KafkaStatusView) = publish(publicSubscribers, "kafka", status)
 
     /** Tells every client to reload state it may have missed (e.g. after the notification listener reconnected). */
     fun publishResync() {

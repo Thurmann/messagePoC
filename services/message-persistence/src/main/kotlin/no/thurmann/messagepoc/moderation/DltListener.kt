@@ -1,8 +1,8 @@
 package no.thurmann.messagepoc.moderation
 
-import no.thurmann.messagepoc.persistence.MessageResult
 import no.thurmann.messagepoc.contracts.KafkaTopics
 import no.thurmann.messagepoc.contracts.MessageSubmittedEvent
+import no.thurmann.messagepoc.persistence.MessageResult
 import org.slf4j.LoggerFactory
 import org.springframework.kafka.annotation.KafkaListener
 import org.springframework.stereotype.Component

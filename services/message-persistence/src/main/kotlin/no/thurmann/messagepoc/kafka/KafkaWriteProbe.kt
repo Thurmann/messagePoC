@@ -17,6 +17,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.boot.kafka.autoconfigure.KafkaProperties
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
+import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit
@@ -55,7 +56,7 @@ class KafkaWriteProbe internal constructor(
             producer.send(ProducerRecord(props.topic, "probe", Instant.now().toString()))
                 .get(props.timeout.toMillis() + 1000, TimeUnit.MILLISECONDS)
             onResult(state.recordSuccess(Instant.now()), null)
-        } catch (e: InterruptedException) {
+        } catch (_: InterruptedException) {
             Thread.currentThread().interrupt()
             onResult(state.recordFailure(Instant.now(), "interrupted"), "interrupted")
         } catch (e: Exception) {
@@ -98,7 +99,7 @@ class KafkaWriteProbe internal constructor(
             topicEnsured = true
         } finally {
             try {
-                admin.close(java.time.Duration.ofSeconds(1))
+                admin.close(Duration.ofSeconds(1))
             } catch (_: Exception) {
             }
         }
@@ -124,7 +125,7 @@ class KafkaWriteProbe internal constructor(
     @PreDestroy
     fun close() {
         try {
-            producer.close(java.time.Duration.ofSeconds(1))
+            producer.close(Duration.ofSeconds(1))
         } catch (e: Exception) {
             logger.debug("Error closing health producer", e)
         }

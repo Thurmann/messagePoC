@@ -1,16 +1,17 @@
 package no.thurmann.messagepoc.it
 
-import no.thurmann.messagepoc.persistence.MessageResult
+import no.thurmann.messagepoc.auth.googleJwtValidator
 import no.thurmann.messagepoc.contracts.MessageAuthor
 import no.thurmann.messagepoc.contracts.MessageRejectedEvent
 import no.thurmann.messagepoc.contracts.MessageRejectedPayload
 import no.thurmann.messagepoc.contracts.MessageValidatedEvent
 import no.thurmann.messagepoc.contracts.MessageValidatedPayload
-import no.thurmann.messagepoc.auth.googleJwtValidator
+import no.thurmann.messagepoc.persistence.MessageResult
+import org.junit.jupiter.api.BeforeEach
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.context.TestConfiguration
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
 import org.springframework.context.annotation.Primary
@@ -18,12 +19,11 @@ import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.security.oauth2.jwt.BadJwtException
 import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.security.oauth2.jwt.JwtDecoder
-import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
+import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.postgresql.PostgreSQLContainer
-import org.junit.jupiter.api.BeforeEach
 import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap

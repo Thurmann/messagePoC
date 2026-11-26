@@ -10,7 +10,6 @@ import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
-import java.time.Duration
 import java.time.Instant
 
 @RestController
@@ -28,9 +27,7 @@ class PresenceController(
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(mapOf("error" to "UNKNOWN_USER"))
         }
         val now = Instant.now()
-        val ban = if (adminDirectory.isAdmin(jwt)) null else moderationService.activeBan(jwt.subject!!, now)?.let {
-            BanInfo(until = it.endsAt, remainingSeconds = Duration.between(now, it.endsAt).seconds.coerceAtLeast(0))
-        }
+        val ban = if (adminDirectory.isAdmin(jwt)) null else moderationService.activeBan(jwt.subject!!, now)?.let { BanInfo.of(it.endsAt, now) }
         return ResponseEntity.ok(PresenceResponse(ban))
     }
 
