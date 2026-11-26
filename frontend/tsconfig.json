@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitReturns": true,
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ES2022",
+    "moduleResolution": "bundler",
+    "rootDir": "src/ts",
+    "outDir": "build/tsc",
+    "allowJs": true,
+    "checkJs": false,
+    "sourceMap": false,
+    "removeComments": false,
+    "skipLibCheck": true
+  },
+  "include": ["src/ts"]
+}

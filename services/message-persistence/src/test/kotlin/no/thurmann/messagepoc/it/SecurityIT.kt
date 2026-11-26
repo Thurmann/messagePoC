@@ -29,7 +29,7 @@ class SecurityIT : AbstractIntegrationTest() {
         mvc.get("/api/chat/history").andExpect { status { isOk() } }
         mvc.get("/api/chat/kafka-status").andExpect { status { isOk() }; jsonPath("$.status") { value("UNKNOWN") } }
         mvc.get("/").andExpect { status { isOk() } }
-        mvc.get("/theme.js").andExpect { status { isOk() } }
+        mvc.get("/js/theme.js").andExpect { status { isOk() } }
         mvc.get("/actuator/health").andExpect { status { isOk() } }
     }
 

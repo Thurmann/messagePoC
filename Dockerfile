@@ -4,7 +4,8 @@
 # "prebuilt" packages a jar from the `jars` build context, which CI fills with jars it already built and tested.
 ARG JAR_SOURCE=build
 
-FROM eclipse-temurin:25-jdk-alpine AS build
+# Not alpine: the Node binaries that the frontend build downloads need glibc.
+FROM eclipse-temurin:25-jdk AS build
 
 WORKDIR /workspace
 ARG SERVICE
@@ -15,6 +16,7 @@ ARG RELEASE_VERSION
 COPY gradlew gradlew.bat settings.gradle.kts build.gradle.kts gradle.properties ./
 COPY gradle ./gradle
 COPY contracts ./contracts
+COPY frontend ./frontend
 COPY services ./services
 
 RUN --mount=type=cache,target=/root/.gradle,sharing=locked \
