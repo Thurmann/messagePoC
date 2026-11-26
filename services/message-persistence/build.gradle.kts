@@ -5,18 +5,6 @@ plugins {
     id("io.spring.dependency-management")
 }
 
-java {
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(25)
-    }
-}
-
-kotlin {
-    compilerOptions {
-        freeCompilerArgs.addAll("-Xjsr305=strict", "-Xannotation-default-target=param-property")
-    }
-}
-
 // Writes META-INF/build-info.properties so /api/config can report the release version.
 // The time is left out so unchanged builds stay up to date and cacheable.
 springBoot {
