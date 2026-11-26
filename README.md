@@ -12,7 +12,8 @@ local logging with Grafana Alloy, Loki, and Grafana.
 - A Google OAuth client ID for sign-in (see [Get a Google client ID](#get-a-google-client-id-locally))
 
 The project uses its own Gradle Wrapper; no global Gradle installation is
-required.
+required. The build also downloads Node.js automatically to compile the chat
+frontend (TypeScript, in `frontend/`), so it needs network access on the first build.
 
 ## Start the complete local environment
 
@@ -40,7 +41,8 @@ reachable from the host at `localhost:9092`, `localhost:9094`, and
 so the cluster keeps accepting `acks=all` writes with one broker down. Each
 broker has a 512 MB heap cap.
 PostgreSQL is at `localhost:5432` and the message API at `localhost:8080`. The live chat is served by
-`message-persistence` at <http://localhost:8083>.
+`message-persistence` at <http://localhost:8083>. The chat UI source is in `frontend/`
+and is packaged into `message-persistence`.
 
 If you previously ran the single-broker setup, run `docker compose down`
 first. The old `kafka-data` volume is no longer used and can be removed with

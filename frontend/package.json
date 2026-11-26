@@ -1,0 +1,11 @@
+{
+  "name": "message-poc-frontend",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "build": "tsc -p ."
+  },
+  "devDependencies": {
+    "typescript": "5.8.3"
+  }
+}
