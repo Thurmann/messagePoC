@@ -14,5 +14,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["vite.config.ts", "build-tools", "e2e", "playwright.config.ts", "playwright.smoke.config.ts"]
+  "include": ["vite.config.ts", "build-tools"]
 }
