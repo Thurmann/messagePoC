@@ -1,39 +1,44 @@
 version: 2
+
+# One PR per ecosystem per month at most: every update type (including majors)
+# goes into a single group, so a month produces at most four PRs and usually fewer.
+# Security updates are not affected by the schedule and still arrive immediately.
 updates:
   - package-ecosystem: "gradle"
     directory: "/"
     schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 10
+      interval: "monthly"
     groups:
-      gradle-dependencies:
-        patterns:
-          - "*"
-        update-types:
-          - "minor"
-          - "patch"
-
-  - package-ecosystem: "docker"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 10
-
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 10
+      gradle:
+        patterns: ["*"]
 
   - package-ecosystem: "npm"
     directory: "/frontend"
     schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 10
+      interval: "monthly"
     groups:
-      npm-dependencies:
-        patterns:
-          - "*"
-        update-types:
-          - "minor"
-          - "patch"
+      frontend:
+        patterns: ["*"]
+    ignore:
+      # @types/node must follow the Node runtime (frontend/.nvmrc, Node 24), not the latest Node.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      # TypeScript 7 (native compiler) is a deliberate migration, not a routine bump.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    groups:
+      docker:
+        patterns: ["*"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    groups:
+      github-actions:
+        patterns: ["*"]
